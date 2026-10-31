@@ -6,18 +6,27 @@ Independent, native-resolution anti-aliasing research for X-Plane 12.
 The goal is a lightweight in-sim plugin for people who want smoother edges
 without FSR, upscaling, neural rendering or frame generation.
 
-**[Download the Windows x64 alpha](https://github.com/cjboy31/make-xp-anti-aliasing-great-again/releases/tag/v0.2.0-alpha).**
+**[Download 0.3.0 Windows x64 alpha](https://github.com/cjboy31/make-xp-anti-aliasing-great-again/releases/tag/v0.3.0-alpha).**
 Extract the Windows ZIP asset, read `README-FIRST.txt`, close X-Plane and run
 `NativeAA-Setup.exe`. Select your simulator folder, then use your usual
 launcher. Open **Plugins > Native AA > Open AA controls**.
-See [release details](docs/RELEASE-0.2.0.md) and [setup](docs/CONTROLS.md).
+See [motion, shimmer and combination details](docs/MOTION-SHIMMER-COMBINATIONS.md)
+and [setup](docs/CONTROLS.md). Previous versioned releases remain available.
 
-**Linux native beta:** [Linux beta downloads](https://github.com/cjboy31/make-xp-anti-aliasing-great-again/releases/tag/v0.2.0-linux-beta.1)
+**Linux native beta:** [0.3.0 Linux beta downloads](https://github.com/cjboy31/make-xp-anti-aliasing-great-again/releases/tag/v0.3.0-linux-beta.1)
 and [Linux installation/testing scope](docs/LINUX-BETA-INSTALLATION.txt).
 This includes a native `lin.xpl` panel and Vulkan `.so` layer with the existing
 SMAA/FXAA/experimental TAA algorithms. Automated native build/IPC/injected-GPU
 and package/loader checks are distinct from Linux X-Plane flight validation,
 which remains open. A different simulator scene signature safely bypasses.
+
+**New in 0.3:** TAA + SMAA / FXAA finishing, optional camera-seeded image-motion
+refinement, shimmer stabilization and vector/history diagnostics. Use the
+**Renderer** tab to save Native AA, FSR/NR/frame generation or the original
+simulator for your next launch. Only one renderer processes a session; switching
+requires restart and retains each mod's settings. The shared selector is merged
+in both projects; the companion FSR installer is being prepared. Update both
+mods for load-order independent switching. See [coexistence](docs/RENDERER-SELECTION.md).
 
 The offscreen Vulkan SMAA recorder has synthetic and private captured-scene
 checks. A separate, explicitly enabled Windows scene adapter is undergoing
@@ -53,6 +62,7 @@ in moving shimmer, ghosting or frame time.
 | SMAA High | Smooth aircraft outlines and geometric stair-steps without history | Cannot stabilize all temporal shimmer |
 | FXAA 3.11 | A simple alternative for broad spatial edge smoothing | Can soften fine texture/text detail |
 | TAA experimental | Accumulate native subpixel geometry samples over time | Can soften detail; estimated motion has limits |
+| TAA + SMAA / FXAA | Temporal accumulation followed by adjustable spatial finishing | Extra GPU work/memory; stronger finishing may soften detail |
 
 ![SMAA High before and after](docs/showcase/smaa-high-comparison.png)
 
@@ -64,8 +74,8 @@ See [capture conditions and limits](docs/showcase/README.md),
 [live TAA validation](docs/TAA-LIVE-VALIDATION.md) and
 [in-sim controls and build/install instructions](docs/CONTROLS.md).
 **These screenshots showcase the Windows alpha. They are not Linux captures.
-macOS rendering is not available yet.** The upcoming motion assistance,
-dedicated shimmer improvements and combined-AA modes will be a separate update.
+macOS rendering is not available yet.** These showcase images come from the
+0.2 baseline; they are not a measured comparison of the 0.3 shimmer controls.
 
 ## Direction
 
@@ -120,8 +130,8 @@ See [architecture](docs/ARCHITECTURE.md), [implementation plan](docs/ROADMAP.md)
 
 The [FSR 3/4 + Frame Gen project](https://github.com/cjboy31/xplane-fsr-vulkan)
 is maintained separately. This tool does not depend on its renderer or Native
-AA modes. Future coexistence must avoid processing the same scene twice and
-must not silently rewrite the other plugin's preferences.
+AA modes. Shared renderer selection avoids processing the same scene twice
+and retains both projects' preferences; see [renderer selection](docs/RENDERER-SELECTION.md).
 
 [Community Discord](https://discord.gg/yh396QNgHZ)
 

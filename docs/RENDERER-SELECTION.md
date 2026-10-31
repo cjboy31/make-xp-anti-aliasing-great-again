@@ -10,8 +10,11 @@ In the updated FSR panel, use **Rendering > Renderer - next launch**.
   input scale and provider in its panel; this choice does not install its runtime.
 - **Original simulator**: both mod renderers stay inactive; native X-Plane AA
   settings still apply.
-- **Automatic**: Native AA takes priority when its standalone activation marker
-  is installed; otherwise FSR can activate. Choose explicitly when using both.
+
+An older **Automatic** preference or a missing preference still lets Native AA
+take priority when its standalone activation marker is installed. Otherwise FSR
+can activate. The panel shows the resulting choice. Your preference file
+changes only when you explicitly select a renderer.
 
 The selection saves in the selected simulator's
 `Output/preferences/XP-Renderer-Selection.ini`. Close X-Plane normally and reopen

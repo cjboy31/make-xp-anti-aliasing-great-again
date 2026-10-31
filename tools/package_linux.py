@@ -13,7 +13,7 @@ import tarfile
 repo = Path(__file__).resolve().parent.parent
 build = Path(sys.argv[1]).resolve()
 output = Path(sys.argv[2]).resolve()
-name = 'Make-XP-AA-0.3.1-linux-beta.1-Linux-x86_64'
+name = 'Make-XP-AA-0.3.2-linux-beta.1-Linux-x86_64'
 stage = output / name
 stage.mkdir(parents=True, exist_ok=False)
 sha = lambda path: hashlib.sha256(path.read_bytes()).hexdigest()
@@ -37,6 +37,8 @@ files = {
     'docs/MOTION-SHIMMER-COMBINATIONS.md': repo / 'docs/MOTION-SHIMMER-COMBINATIONS.md',
     'extras/shadows/make XP shadows great again - enhanced edition.lua': repo / 'extras/shadows/make XP shadows great again - enhanced edition.lua',
     'extras/shadows/README.txt': repo / 'extras/shadows/README.txt',
+    'docs/CONTROLS.md': repo / 'docs/CONTROLS.md',
+    'docs/RELEASE-0.3.2.md': repo / 'docs/RELEASE-0.3.2.md',
     'docs/RENDERER-SELECTION.md': repo / 'docs/RENDERER-SELECTION.md',
     'validation/linux-layer-test-receipt.json': build / 'linux-layer-test-receipt.json',
 }
@@ -53,7 +55,7 @@ for relative, source in files.items():
 (stage / 'install.sh').write_text('#!/bin/sh\nexec python3 "$(dirname "$0")/install-linux.py" "$@"\n')
 (stage / 'install.sh').chmod(0o755)
 source_commit = subprocess.check_output(['git', '-C', str(repo), 'rev-parse', 'HEAD'], text=True).strip()
-manifest = dict(product='Make XP Anti-Aliasing Great Again', version='0.3.1-linux-beta.1',
+manifest = dict(product='Make XP Anti-Aliasing Great Again', version='0.3.2-linux-beta.1',
                 platform='Linux-x86_64', sourceCommit=source_commit,
                 layerSHA256=receipt['layerSHA256'], pluginSHA256=sha(build / 'lin.xpl'),
                 files=[dict(path=str(p.relative_to(stage)), sha256=sha(p)) for p in sorted(stage.rglob('*')) if p.is_file()])

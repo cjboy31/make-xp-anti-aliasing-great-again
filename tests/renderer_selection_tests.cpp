@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MIT
 #include "native_aa/renderer_selection.hpp"
+#include "native_aa/panel_renderer_choice.hpp"
 #include <iostream>
 #include <future>
 #include <vector>
@@ -10,8 +11,13 @@ int main(int argc,char** argv){try{
     check(argc==2,"Fresh fixture root required");const auto root=std::filesystem::absolute(std::string(argv[1])+"-"+r::pid());
     check(!std::filesystem::exists(root),"Fixture already exists");std::filesystem::create_directories(root/"Resources/plugins/NativeAA");
     std::ofstream(root/"Resources/plugins/NativeAA/standalone.enabled")<<"NativeAAStandalone=1\n";
+    check(native_aa::displayed_renderer_choice(root)==r::Choice::native_aa && !std::filesystem::exists(r::file(root)),
+          "Opening the panel must resolve a missing setting without creating a preference");
     for(auto choice:{r::Choice::automatic,r::Choice::native_aa,r::Choice::fsr,r::Choice::off}){
         r::save(root,choice);check(r::read(root)==choice,"Choice did not round-trip");
+        const auto display=choice==r::Choice::automatic?r::Choice::native_aa:choice;
+        check(native_aa::displayed_renderer_choice(root)==display && r::read(root)==choice,
+              "Displaying a legacy or explicit choice must not change the stored choice");
         for(bool aa_first:{false,true}){
             reset();const auto first=aa_first?r::Choice::native_aa:r::Choice::fsr,second=aa_first?r::Choice::fsr:r::Choice::native_aa;
             const auto a=r::claim(root,first),b=r::claim(root,second);
@@ -35,6 +41,8 @@ int main(int argc,char** argv){try{
     reset();std::ofstream(r::file(root),std::ios::trunc)<<"XPlaneRendererSelection=99\nrenderer=fsr\n";
     check(!r::claim(root,r::Choice::native_aa).allowed&&!r::claim(root,r::Choice::fsr).allowed,"Invalid selection did not fail closed");
     reset();std::filesystem::remove(r::file(root));std::filesystem::remove(root/"Resources/plugins/NativeAA/standalone.enabled");
+    check(native_aa::displayed_renderer_choice(root)==r::Choice::fsr && !std::filesystem::exists(r::file(root)),
+          "Legacy FSR-only startup should display FSR and preserve the missing preference");
     check(!r::claim(root,r::Choice::native_aa).allowed&&r::claim(root,r::Choice::fsr).allowed,"FSR-only automatic startup failed");
     reset();std::filesystem::remove_all(root);std::cout<<"PASS renderer choice: both load orders, all choices, restart latch, explicit launch, legacy/stale owner, concurrent admission, malformed file and FSR-only startup\n";return 0;
 }catch(const std::exception& e){std::cerr<<"FAIL "<<e.what()<<'\n';return 1;}}

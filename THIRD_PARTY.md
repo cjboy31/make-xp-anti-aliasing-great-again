@@ -60,3 +60,13 @@ estimation (CC BY-NC 4.0), and Intel CMAA2 (Apache-2.0). The original motion
 kernel here is not copied from any of those implementations. See
 [research decisions](docs/MOTION-AND-TEMPORAL-AA.md) for direct source links and
 the distinction between camera vectors, per-object velocity and optical flow.
+
+## Linux build/runtime dependencies
+
+The Linux beta compiles against external pinned Vulkan headers and the official
+X-Plane SDK, and dynamically uses the distribution's Vulkan loader, OpenGL,
+C++ runtime and OpenSSL 3 libcrypto for shader SHA-256 identification. Their
+runtime binaries and SDK/import libraries are not packaged. The Linux layer,
+plugin, platform helpers, IPC and installer are original project code under MIT.
+The CI workflow records the build-only SDK download checksum and Vulkan-header
+commit. Linux packages retain the same SMAA, FXAA and XPLM notices as Windows.

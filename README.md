@@ -12,6 +12,13 @@ Extract the Windows ZIP asset, read `README-FIRST.txt`, close X-Plane and run
 launcher. Open **Plugins > Native AA > Open AA controls**.
 See [release details](docs/RELEASE-0.2.0.md) and [setup](docs/CONTROLS.md).
 
+**Linux native beta:** [Linux beta downloads](https://github.com/cjboy31/make-xp-anti-aliasing-great-again/releases/tag/v0.2.0-linux-beta.1)
+and [Linux installation/testing scope](docs/LINUX-BETA-INSTALLATION.txt).
+This includes a native `lin.xpl` panel and Vulkan `.so` layer with the existing
+SMAA/FXAA/experimental TAA algorithms. Automated native build/IPC/injected-GPU
+and package/loader checks are distinct from Linux X-Plane flight validation,
+which remains open. A different simulator scene signature safely bypasses.
+
 The offscreen Vulkan SMAA recorder has synthetic and private captured-scene
 checks. A separate, explicitly enabled Windows scene adapter is undergoing
 live testing against a captured X-Plane 12.4.4 SDR path. Unsupported paths
@@ -56,8 +63,8 @@ in moving shimmer, ghosting or frame time.
 See [capture conditions and limits](docs/showcase/README.md),
 [live TAA validation](docs/TAA-LIVE-VALIDATION.md) and
 [in-sim controls and build/install instructions](docs/CONTROLS.md).
-**These screenshots showcase the Windows alpha. Linux/macOS scene adapters
-and installers are not available yet.** The upcoming motion assistance,
+**These screenshots showcase the Windows alpha. They are not Linux captures.
+macOS rendering is not available yet.** The upcoming motion assistance,
 dedicated shimmer improvements and combined-AA modes will be a separate update.
 
 ## Direction
@@ -82,7 +89,7 @@ remains a separate workstream. Sharpening is not a substitute for correct histor
 | Target | Intended integration | Current state |
 | --- | --- | --- |
 | Windows x64 | Vulkan scene processing | Initial live SMAA/FXAA/TAA checks on 12.4.4 / R9700; broader compatibility open |
-| Linux x64 | Native Vulkan scene processing | Offscreen Vulkan fixture/CI; no simulator integration |
+| Linux x64 | Native Vulkan scene processing | Native beta layer/panel/package; automated validation, Linux flights pending |
 | macOS arm64 / x86_64 | Native Metal scene processing | Portable core; Metal scene-access investigation required |
 
 The CI matrix builds and runs CPU contract tests on Windows, Linux, Apple

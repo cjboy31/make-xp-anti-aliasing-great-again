@@ -120,7 +120,7 @@ void native_taa_layer_checks(Context& c,const std::filesystem::path& shaders){
             const auto result=scene.ldr.read(staging);need(!result.empty(),"TAA scene readback empty");
             const auto before=scene.before.read(staging);alpha_equal(before,result);
             if(!settings.enabled)need(before==result,"TAA Off changed the native frame");
-            if(frame==15){Sleep(260);} // Force a fresh status publication next submit.
+            if(frame==15){std::this_thread::sleep_for(std::chrono::milliseconds(260));} // Force fresh status next submit.
         }
         native_aa::LiveStatus status;need(channel.status(status) && status.temporal_completed>=12 && status.temporal_reused>=8,"No fenced TAA history progression in layer");
     }

@@ -4,6 +4,8 @@
 #include "smaa_vulkan_tests.cpp"
 #undef main
 #include <cstdlib>
+#include <thread>
+#include <chrono>
 #include "native_aa/live_channel.hpp"
 #include "native_aa/platform.hpp"
 

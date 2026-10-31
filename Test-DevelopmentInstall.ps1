@@ -24,3 +24,27 @@ $manifest=Get-Content -LiteralPath (Join-Path $plugin 'renderer/native-aa.json')
 if($manifest.layer.library_path -notmatch '^\.\\native-aa-[a-f0-9]{12}\.dll$'){throw 'Installer did not use the checked Windows manifest path'}
 if(Test-Path -LiteralPath (Join-Path $plugin 'standalone.enabled')){throw 'No-integration install unexpectedly enabled startup'}
 Write-Output 'Development installer PASS: initial/update, owned-file cleanup, unknown/modified user-file preservation and shared Windows manifest.'
+# Validate malformed inventory before allowing uninstall to mutate any file.
+$inventory=Get-Content -LiteralPath $inventoryPath -Raw|ConvertFrom-Json
+$validInventory=$inventory|ConvertTo-Json -Depth 5
+$installedPlugin=Join-Path $plugin '64/win.xpl'
+$installedHash=(Get-FileHash -LiteralPath $installedPlugin -Algorithm SHA256).Hash
+$inventory.files+=@([pscustomobject]@{path='../outside.txt';sha256=('0'*64)})
+[IO.File]::WriteAllText($inventoryPath,($inventory|ConvertTo-Json -Depth 5),[Text.UTF8Encoding]::new($false))
+$rejected=$false
+try{& (Join-Path $PSScriptRoot 'Uninstall.ps1') -Simulator $root -NoOrdinaryLauncherIntegration}catch{$rejected=$true}
+if(-not $rejected -or (Get-FileHash -LiteralPath $installedPlugin -Algorithm SHA256).Hash -ne $installedHash){throw 'Malformed uninstall inventory was not rejected before mutation'}
+$rejected=$false
+try{& (Join-Path $PSScriptRoot 'Install-DevelopmentBuild.ps1') -Simulator $root -NoOrdinaryLauncherIntegration}catch{$rejected=$true}
+if(-not $rejected -or (Get-FileHash -LiteralPath $installedPlugin -Algorithm SHA256).Hash -ne $installedHash){throw 'Malformed update inventory was not rejected before mutation'}
+[IO.File]::WriteAllText($inventoryPath,$validInventory,[Text.UTF8Encoding]::new($false))
+# An edited shipped file survives uninstall, as do unknown user files/settings.
+$editedReadme=Join-Path $plugin 'README.txt'
+[IO.File]::WriteAllText($editedReadme,'user notes replacing the readme')
+New-Item -ItemType Directory -Path (Join-Path $root 'Output/preferences') -Force|Out-Null
+$preferences=Join-Path $root 'Output/preferences/NativeAA.ini'
+[IO.File]::WriteAllText($preferences,'fixture preferences')
+& (Join-Path $PSScriptRoot 'Uninstall.ps1') -Simulator $root -NoOrdinaryLauncherIntegration
+if((Test-Path -LiteralPath $installedPlugin) -or (Test-Path -LiteralPath (Join-Path $plugin 'renderer/native-aa.json')) -or (Test-Path -LiteralPath $inventoryPath)){throw 'Uninstall retained unchanged owned files'}
+if((Get-Content -LiteralPath $note -Raw) -ne 'Keep this user file' -or (Get-Content -LiteralPath $changed -Raw) -ne 'user edited this file' -or (Get-Content -LiteralPath $editedReadme -Raw) -ne 'user notes replacing the readme' -or (Get-Content -LiteralPath $preferences -Raw) -ne 'fixture preferences'){throw 'Uninstall altered user data/preferences'}
+Write-Output 'Release lifecycle PASS: malformed update/uninstall rejected before mutation; owned plugin removed; edited/unknown files and preferences preserved.'

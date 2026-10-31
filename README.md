@@ -6,26 +6,31 @@ Independent, native-resolution anti-aliasing research for X-Plane 12.
 The goal is a lightweight in-sim plugin for people who want smoother edges
 without FSR, upscaling, neural rendering or frame generation.
 
-**Windows development build; no packaged end-user rendering release yet.**
+**[Download the Windows x64 alpha](https://github.com/cjboy31/make-xp-anti-aliasing-great-again/releases/tag/v0.2.0-alpha).**
+Extract the Windows ZIP asset, read `README-FIRST.txt`, close X-Plane and run
+`NativeAA-Setup.exe`. Select your simulator folder, then use your usual
+launcher. Open **Plugins > Native AA > Open AA controls**.
+See [release details](docs/RELEASE-0.2.0.md) and [setup](docs/CONTROLS.md).
+
 The offscreen Vulkan SMAA recorder has synthetic and private captured-scene
 checks. A separate, explicitly enabled Windows scene adapter is undergoing
 live testing against a captured X-Plane 12.4.4 SDR path. Unsupported paths
 remain unchanged. See [live-test scope](docs/LIVE-TEST.md) and
 [offscreen reproduction](docs/SMAA-PROTOTYPE.md).
 
-The current branch adds an original in-sim control panel, saved live SMAA
+The current release includes an original in-sim control panel, saved live SMAA
 quality/blend controls, an independent FXAA 3.11 alternative and fresh
 GPU-completion status. Open **Plugins > Native AA > Open AA controls** after
-installing the checked developer build; see [controls and setup](docs/CONTROLS.md).
+installing the checked build; see [controls and setup](docs/CONTROLS.md).
 
-This branch connects experimental **native-resolution TAA** to the Windows
+Experimental **native-resolution TAA** is connected to the Windows
 scene adapter and live panel. It uses geometry jitter, a bounded depth snapshot,
 camera/depth reprojection, color/depth rejection and clipped temporal history.
 Camera motion is estimated; X-Plane does not supply general object/cloud vectors.
 Sky/invalid depth uses fresh samples. Unsupported capture falls back visibly to
 SMAA. Live Windows verification now confirms completed temporal frames, history
 reuse, live controls and clean restart on X-Plane 12.4.4 / R9700. This is still an
-experimental developer build, not a general compatibility or long-flight guarantee.
+experimental alpha build, not a general compatibility or long-flight guarantee.
 See [motion research and AA alternatives](docs/MOTION-AND-TEMPORAL-AA.md).
 
 ## See the difference
@@ -51,8 +56,9 @@ in moving shimmer, ghosting or frame time.
 See [capture conditions and limits](docs/showcase/README.md),
 [live TAA validation](docs/TAA-LIVE-VALIDATION.md) and
 [in-sim controls and build/install instructions](docs/CONTROLS.md).
-**These screenshots showcase the Windows development build. There is no
-packaged general-release installer or working Linux/macOS scene adapter yet.**
+**These screenshots showcase the Windows alpha. Linux/macOS scene adapters
+and installers are not available yet.** The upcoming motion assistance,
+dedicated shimmer improvements and combined-AA modes will be a separate update.
 
 ## Direction
 

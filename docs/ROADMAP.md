@@ -20,6 +20,12 @@
 
 ## First working prototype
 
+The `experimental/live-smaa` branch now has an opt-in Windows scene adapter
+undergoing private live checks. It uses the captured native 12.4.4 SDR boundary,
+independent compute SMAA, bounded scratch and explicit state/submission handling.
+The first live exit and reproduced descriptor-parser correction are documented
+in [live-test evidence](LIVE-TEST.md); this remains a developer experiment.
+
 1. Extend the offscreen Vulkan/reference checks to more scene patterns and drivers.
 2. Find and verify an independent native-resolution X-Plane Vulkan scene boundary
    with FSR disabled, before UI. Test both Windows and native Linux activation.

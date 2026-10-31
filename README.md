@@ -4,11 +4,12 @@ Independent, native-resolution anti-aliasing research for X-Plane 12.
 The goal is a lightweight in-sim plugin for people who want smoother edges
 without FSR, upscaling, neural rendering or frame generation.
 
-**Experimental offscreen prototype. There is no installable X-Plane AA plugin
-or simulator scene integration yet.** The Vulkan SMAA recorder filters original
-synthetic test images. The portable C++ core checks frame eligibility. Neither
-component injects into X-Plane or changes simulator settings. Read
-[prototype scope and reproduction](docs/SMAA-PROTOTYPE.md) before testing.
+**Developer prototype; no installable AA plugin or rendering release.**
+The offscreen Vulkan SMAA recorder has synthetic and private captured-scene
+checks. A separate, explicitly enabled Windows scene adapter is undergoing
+live testing against a captured X-Plane 12.4.4 SDR path. Unsupported paths
+remain unchanged. See [live-test scope](docs/LIVE-TEST.md) and
+[offscreen reproduction](docs/SMAA-PROTOTYPE.md).
 
 The temporal-AA experiment adds original GPU camera/depth reprojection, motion
 convention normalization and history reset gates. It does **not** yet accumulate
@@ -35,7 +36,7 @@ future evaluation requiring verified jitter/motion and history invalidation.
 
 | Target | Intended integration | Current state |
 | --- | --- | --- |
-| Windows x64 | Vulkan scene processing | Offscreen SMAA tested on AMD R9700; no simulator integration |
+| Windows x64 | Vulkan scene processing | R9700 offscreen tests; exact-version adapter under live evaluation |
 | Linux x64 | Native Vulkan scene processing | Offscreen Vulkan fixture/CI; no simulator integration |
 | macOS arm64 / x86_64 | Native Metal scene processing | Portable core; Metal scene-access investigation required |
 

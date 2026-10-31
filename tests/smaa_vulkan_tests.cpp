@@ -1,6 +1,7 @@
 // Offscreen correctness fixture. Synchronous transfers here are not a live
 // simulator fast path or an FPS benchmark. All images are original test patterns.
 #include "native_aa/smaa_pipeline.hpp"
+#include "native_aa/compute_smaa_pipeline.hpp"
 #include "native_aa/camera_motion_pipeline.hpp"
 #include "Textures/AreaTex.h"
 #include "Textures/SearchTex.h"
@@ -27,7 +28,7 @@ struct Context {
     VkInstance instance{}; VkDebugUtilsMessengerEXT messenger{};
     VkPhysicalDevice physical{}; VkPhysicalDeviceProperties properties{};
     VkPhysicalDeviceMemoryProperties memory{};
-    VkDevice device{}; VkQueue queue{}; unsigned family{};
+    VkDevice device{}; VkQueue queue{},async_queue{}; unsigned family{},async_family=~0U;
     VkCommandPool pool{}; VkCommandBuffer commands{}; VkFence fence{};
     std::atomic<unsigned> errors{0}, warnings{0};
     std::uint64_t allocated_bytes = 0;
@@ -38,7 +39,7 @@ struct Context {
         else if (severity & VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT) ++self.warnings;
         std::cerr << "Vulkan validation: " << data->pMessage << '\n'; return VK_FALSE;
     }
-    explicit Context(bool validation) {
+    explicit Context(bool validation,bool dynamic_rendering=false,bool asynchronous=false) {
         try {
             const char* layer = "VK_LAYER_KHRONOS_validation";
             if (validation) {
@@ -58,7 +59,7 @@ struct Context {
             debug_info.pNext = &features;
             const std::array<const char*, 2> extensions{VK_EXT_DEBUG_UTILS_EXTENSION_NAME, VK_EXT_VALIDATION_FEATURES_EXTENSION_NAME};
             VkApplicationInfo app{VK_STRUCTURE_TYPE_APPLICATION_INFO};
-            app.pApplicationName = "Native AA offscreen tests"; app.apiVersion = VK_API_VERSION_1_1;
+            app.pApplicationName = "Native AA offscreen tests"; app.apiVersion = dynamic_rendering?VK_API_VERSION_1_3:VK_API_VERSION_1_1;
             VkInstanceCreateInfo info{VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO}; info.pApplicationInfo = &app;
             if (validation) {
                 info.enabledLayerCount = 1; info.ppEnabledLayerNames = &layer;
@@ -95,8 +96,21 @@ struct Context {
             queue_info.queueFamilyIndex = family; queue_info.queueCount = 1; queue_info.pQueuePriorities = &priority;
             VkDeviceCreateInfo device_info{VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO};
             device_info.queueCreateInfoCount = 1; device_info.pQueueCreateInfos = &queue_info;
+            std::array<VkDeviceQueueCreateInfo,2> queue_infos{queue_info,queue_info};
+            if(asynchronous){
+                unsigned count{};vkGetPhysicalDeviceQueueFamilyProperties(physical,&count,nullptr);
+                std::vector<VkQueueFamilyProperties> queues(count);vkGetPhysicalDeviceQueueFamilyProperties(physical,&count,queues.data());
+                for(unsigned i=0;i<count;++i)if(i!=family && queues[i].queueCount && (queues[i].queueFlags&VK_QUEUE_COMPUTE_BIT)){async_family=i;break;}
+                need(async_family!=~0U,"Async regression requires another compute-capable queue family");
+                queue_infos[1].queueFamilyIndex=async_family;device_info.queueCreateInfoCount=2;device_info.pQueueCreateInfos=queue_infos.data();
+            }
+            VkPhysicalDeviceVulkan13Features dynamic{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES};
+            dynamic.dynamicRendering=VK_TRUE;
+            dynamic.synchronization2=asynchronous?VK_TRUE:VK_FALSE;
+            if(dynamic_rendering) device_info.pNext=&dynamic;
             check(vkCreateDevice(physical, &device_info, nullptr, &device), "Create test device");
             vkGetDeviceQueue(device, family, 0, &queue);
+            if(asynchronous)vkGetDeviceQueue(device,async_family,0,&async_queue);
             VkCommandPoolCreateInfo pool_info{VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO};
             pool_info.queueFamilyIndex = family; pool_info.flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;
             check(vkCreateCommandPool(device, &pool_info, nullptr, &pool), "Create command pool");
@@ -180,7 +194,7 @@ struct Image {
     Context& c; VkImage handle{}; VkDeviceMemory memory{}; VkImageView view{}, srgb{};
     VkExtent2D extent{}; VkFormat format{}; unsigned pixel_bytes{}; VkDeviceSize allocation{};
     VkImageLayout layout = VK_IMAGE_LAYOUT_UNDEFINED;
-    Image(Context& context, VkExtent2D size, VkFormat f, unsigned bytes, bool attachment, bool mutable_srgb = false, bool storage = false)
+    Image(Context& context, VkExtent2D size, VkFormat f, unsigned bytes, bool attachment, bool mutable_srgb = false, bool storage = false,unsigned other_family=~0U)
         : c(context), extent(size), format(f), pixel_bytes(bytes) {
         try {
             need(size.width && size.height && size.width <= 4096 && size.height <= 4096, "Fixture extent out of bounds");
@@ -194,6 +208,8 @@ struct Image {
             info.imageType = VK_IMAGE_TYPE_2D; info.format = f; info.extent = {size.width, size.height, 1};
             info.mipLevels = info.arrayLayers = 1; info.samples = VK_SAMPLE_COUNT_1_BIT; info.tiling = VK_IMAGE_TILING_OPTIMAL;
             info.usage = VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT;
+            const std::array<unsigned,2> families{c.family,other_family};
+            if(other_family!=~0U && other_family!=c.family){info.sharingMode=VK_SHARING_MODE_CONCURRENT;info.queueFamilyIndexCount=2;info.pQueueFamilyIndices=families.data();}
             if (attachment) info.usage |= VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
             if (storage) info.usage |= VK_IMAGE_USAGE_STORAGE_BIT;
             check(vkCreateImage(c.device, &info, nullptr, &handle), "Create test image");
@@ -300,6 +316,47 @@ struct Fixture {
         return output.read(staging);
     }
 };
+
+struct ComputeFixture {
+    Context& c; Buffer staging; Image source,edges,weights,output,area,search;
+    native_aa::ComputeSmaaPipeline pipeline;
+    ComputeFixture(Context& context,VkExtent2D extent,const std::filesystem::path& shaders)
+        :c(context),staging(c,std::max<std::uint64_t>(AREATEX_SIZE,std::uint64_t{extent.width}*extent.height*4)),
+         source(c,extent,VK_FORMAT_R8G8B8A8_UNORM,4,false,true),
+         edges(c,extent,VK_FORMAT_R8G8B8A8_UNORM,4,false,false,true),
+         weights(c,extent,VK_FORMAT_R8G8B8A8_UNORM,4,false,false,true),
+         output(c,extent,VK_FORMAT_R8G8B8A8_UNORM,4,false,false,true),
+         area(c,{AREATEX_WIDTH,AREATEX_HEIGHT},VK_FORMAT_R8G8_UNORM,2,false),
+         search(c,{SEARCHTEX_WIDTH,SEARCHTEX_HEIGHT},VK_FORMAT_R8_UNORM,1,false),
+         pipeline(c.device,extent,{source.view,source.srgb,area.view,search.view,edges.view,weights.view,output.view},shaders) {
+        area.upload(staging,areaTexBytes,sizeof(areaTexBytes)); search.upload(staging,searchTexBytes,sizeof(searchTexBytes));
+    }
+    std::vector<unsigned char> render(const std::vector<unsigned char>& pixels) {
+        source.upload(staging,pixels.data(),pixels.size());
+        c.submit([&](auto cb){
+            const std::array<Image*,3> targets{&edges,&weights,&output};
+            for(unsigned i=0;i<3;++i) {
+                targets[i]->transition(cb,VK_IMAGE_LAYOUT_GENERAL); pipeline.record_pass(cb,i);
+                targets[i]->transition(cb,VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+            }
+        });
+        return output.read(staging);
+    }
+};
+
+unsigned compare_compute(const std::vector<unsigned char>& raster,const std::vector<unsigned char>& compute,unsigned tolerance=2) {
+    need(raster.size()==compute.size(),"Compute/raster size mismatch");
+    unsigned maximum=0,aboveTwo=0;
+    for(std::size_t i=0;i<raster.size();++i) {
+        const auto delta=unsigned(std::abs(int(raster[i])-int(compute[i])));
+        maximum=std::max(maximum,delta); aboveTwo+=delta>2;
+    }
+    // Raster-interpolated offsets and compute-calculated offsets can round
+    // differently at 4K. Retain the tighter synthetic gate; permit at most
+    // 0.01% of captured RGB channels to differ by a third byte value.
+    need(maximum<=tolerance && aboveTwo<=raster.size()/10000,"Compute SMAA differs materially from raster SMAA");
+    return maximum;
+}
 
 unsigned camera_motion_checks(Context& c, const std::filesystem::path& shaders) {
     const VkExtent2D extent{65,49}; const auto count = std::size_t{extent.width} * extent.height;
@@ -414,10 +471,14 @@ std::string json_string(const char* text) {
 int main(int argc, char** argv) {
     std::filesystem::path evidence;
     try {
-        std::filesystem::path shaders; bool validation = false;
+        std::filesystem::path shaders, captured_input; bool validation = false;
+        VkExtent2D captured_extent{};
         for (int i = 1; i < argc; ++i) {
             const std::string arg = argv[i];
             if (arg == "--validation") validation = true;
+            else if (arg == "--input-rgba" && i + 1 < argc) captured_input = argv[++i];
+            else if (arg == "--width" && i + 1 < argc) captured_extent.width = unsigned(std::stoul(argv[++i]));
+            else if (arg == "--height" && i + 1 < argc) captured_extent.height = unsigned(std::stoul(argv[++i]));
             else if ((arg == "--shaders" || arg == "--output") && i + 1 < argc) {
                 if (arg == "--shaders") shaders = argv[++i]; else evidence = argv[++i];
             } else throw std::runtime_error("Usage: smaa_vulkan_tests --shaders DIR --output DIR [--validation]");
@@ -429,16 +490,64 @@ int main(int argc, char** argv) {
             need(static_cast<bool>(running), "Cannot reset prior test status");
         }
         Context context(validation);
+        if (!captured_input.empty()) {
+            need(captured_extent.width && captured_extent.height && captured_extent.width <= 4096 && captured_extent.height <= 4096,
+                 "Captured SDR input dimensions required (maximum 4096 each)");
+            Pixels pixels(std::size_t{captured_extent.width} * captured_extent.height * 4);
+            std::ifstream file(captured_input, std::ios::binary | std::ios::ate);
+            need(bool(file) && file.tellg() == std::streamoff(pixels.size()), "Captured RGBA size mismatch");
+            file.seekg(0); file.read(reinterpret_cast<char*>(pixels.data()), std::streamsize(pixels.size()));
+            need(bool(file), "Captured RGBA read failed");
+            std::uint64_t reserved = 0;
+            {
+                Fixture fixture(context, captured_extent, shaders);
+                ComputeFixture compute(context,captured_extent,shaders); reserved = context.allocated_bytes;
+                const auto output = fixture.render(pixels); alpha_equal(pixels, output);
+                const auto computed=compute.render(pixels); alpha_equal(pixels,computed);
+                ppm(evidence/"compute-output.ppm",computed,captured_extent);
+                ppm(evidence/"raster-output.ppm",output,captured_extent);
+                const auto ce=compute.edges.read(compute.staging),re=fixture.edges.read(fixture.staging);
+                const auto cw=compute.weights.read(compute.staging),rw=fixture.weights.read(fixture.staging);
+                unsigned edgeDiff=0,weightDiff=0;
+                for(std::size_t i=0;i<ce.size()/4;++i) {
+                    for(unsigned j=0;j<2;++j) edgeDiff+=ce[i*4+j]!=re[i*2+j];
+                    for(unsigned j=0;j<4;++j) weightDiff+=cw[i*4+j]!=rw[i*4+j];
+                }
+                std::cout << "Captured edge/weight differing channels: " << edgeDiff << "/" << weightDiff << '\n';
+                const auto difference=compare_compute(output,computed,3);
+                std::cout << "Captured compute/raster maximum byte difference: " << difference << '\n';
+                need(fixture.source.read(fixture.staging) == pixels, "Captured source was modified");
+                need(fixture.render(pixels) == output, "Captured frame repeat was not deterministic");
+                need(context.allocated_bytes == reserved, "Captured replay grew owned memory");
+                ppm(evidence / "native-input.ppm", pixels, captured_extent);
+                ppm(evidence / "smaa-output.ppm", output, captured_extent);
+                std::ofstream rgba(evidence / "smaa-output.rgba", std::ios::binary);
+                rgba.write(reinterpret_cast<const char*>(output.data()), std::streamsize(output.size()));
+                need(bool(rgba), "Captured result write failed");
+            }
+            need(context.allocated_bytes == 0, "Capture fixture retained allocations");
+            context.close(); need(context.errors == 0, "Captured replay validation errors");
+            std::ofstream report(evidence / "result.json");
+            report << "{\"status\":\"PASS\",\"scope\":\"private captured SDR scene replay; not live simulator injection or an AA ground truth\","
+                   << "\"width\":" << captured_extent.width << ",\"height\":" << captured_extent.height
+                   << ",\"validation_errors\":" << context.errors << ",\"validation_warnings\":" << context.warnings
+                   << ",\"image_and_staging_bytes\":" << reserved << "}\n";
+            need(bool(report), "Capture report write failed");
+            std::cout << "Captured native scene SMAA replay PASS (not live injection).\n";
+            return 0;
+        }
         std::ofstream metrics(evidence / "metrics.csv"); metrics << "width,height,slope,phase,input_linear_mse,smaa_linear_mse\n";
         unsigned frames = 0, improved = 0; double total_before = 0, total_after = 0;
         std::uint64_t peak_owned = 0;
         for (const auto extent : {VkExtent2D{256, 144}, VkExtent2D{63, 47}, VkExtent2D{257, 145}}) {
             {
                 Fixture fixture(context, extent, shaders);
+                ComputeFixture compute(context,extent,shaders);
                 const auto reserved = context.allocated_bytes; peak_owned = std::max(peak_owned, reserved);
                 for (const double slope : {0.23, 0.58, 1.3, -0.41, -1.7}) for (const double phase : {0.1, 0.4, 0.8}) {
                     const auto input = pattern(extent, slope, phase, false), reference = pattern(extent, slope, phase, true);
                     const auto output = fixture.render(input); ++frames; alpha_equal(input, output);
+                    const auto computed=compute.render(input); alpha_equal(input,computed); compare_compute(output,computed);
                     const auto before = mse(input, reference, extent), after = mse(output, reference, extent);
                     metrics << extent.width << ',' << extent.height << ',' << slope << ',' << phase << ',' << before << ',' << after << '\n';
                     total_before += before; total_after += after; improved += after < before;
@@ -457,6 +566,7 @@ int main(int argc, char** argv) {
                 for (std::size_t i = 0; i < flat.size(); i += 4) { flat[i] = 37; flat[i + 1] = 89; flat[i + 2] = 153; flat[i + 3] = static_cast<unsigned char>(i % 256); }
                 for (unsigned i = 0; i < 4; ++i) {
                     const auto output = fixture.render(flat); ++frames; alpha_equal(flat, output);
+                    const auto computed=compute.render(flat); alpha_equal(flat,computed); compare_compute(output,computed);
                     for (std::size_t j = 0; j < flat.size(); ++j)
                         need(std::abs(int(output[j]) - int(flat[j])) <= 1, "Flat color was softened or shifted");
                 }

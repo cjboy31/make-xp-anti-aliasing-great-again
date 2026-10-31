@@ -1,0 +1,6 @@
+#version 450
+layout(local_size_x=1) in;
+layout(set=0,binding=0,std430) buffer Output {uint value;} outputValue;
+layout(set=1,binding=0,std140) uniform Input {uint value;} inputValue;
+layout(push_constant) uniform Push {uint bias;} pushValue;
+void main(){outputValue.value=inputValue.value+pushValue.bias;}

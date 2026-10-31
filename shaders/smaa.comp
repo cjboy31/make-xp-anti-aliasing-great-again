@@ -1,0 +1,44 @@
+#version 450
+#extension GL_GOOGLE_include_directive : require
+// Compute wrapper around the pinned, unmodified MIT SMAA implementation.
+// Raster discard becomes an explicit zero-edge return: every pixel is written.
+// All resources have one mip, and all sampling uses explicit LOD zero.
+layout(local_size_x=8,local_size_y=8) in;
+layout(constant_id=0) const float frameWidth=1.0;
+layout(constant_id=1) const float frameHeight=1.0;
+#define SMAA_RT_METRICS vec4(1.0/frameWidth,1.0/frameHeight,frameWidth,frameHeight)
+#define SMAA_GLSL_4 1
+#define SMAA_PRESET_HIGH 1
+#define discard return vec2(0.0)
+#define texture(s,c) textureLod(s,c,0.0)
+#define textureOffset(s,c,o) textureLodOffset(s,c,0.0,o)
+#include "SMAA.hlsl"
+#undef discard
+#undef texture
+#undef textureOffset
+layout(set=0,binding=0) uniform sampler2D first;
+layout(set=0,binding=1) uniform sampler2D second;
+layout(set=0,binding=2) uniform sampler2D third;
+layout(rgba8,set=0,binding=3) writeonly uniform image2D target;
+vec3 encodeSRGB(vec3 value) {
+    value=clamp(value,0.0,1.0);
+    return mix(1.055*pow(value,vec3(1.0/2.4))-0.055,12.92*value,lessThanEqual(value,vec3(0.0031308)));
+}
+void main() {
+    ivec2 p=ivec2(gl_GlobalInvocationID.xy);
+    if(any(greaterThanEqual(p,ivec2(frameWidth,frameHeight)))) return;
+    vec2 uv=(vec2(p)+0.5)*SMAA_RT_METRICS.xy;
+    vec4 offsets[3]; vec2 pixel; vec4 result;
+#if AA_PASS == 0
+    SMAAEdgeDetectionVS(uv,offsets);
+    result=vec4(SMAALumaEdgeDetectionPS(uv,offsets,first),0.0,0.0);
+#elif AA_PASS == 1
+    SMAABlendingWeightCalculationVS(uv,pixel,offsets);
+    result=SMAABlendingWeightCalculationPS(uv,pixel,offsets,first,second,third,vec4(0.0));
+#else
+    SMAANeighborhoodBlendingVS(uv,offsets[0]);
+    result=SMAANeighborhoodBlendingPS(uv,offsets[0],first,second);
+    result=vec4(encodeSRGB(result.rgb),texelFetch(third,p,0).a);
+#endif
+    imageStore(target,p,result);
+}

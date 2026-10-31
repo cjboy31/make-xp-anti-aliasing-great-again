@@ -14,7 +14,8 @@ PQ or scene-linear values through an SDR shader is not acceptable.
 
 The portable `native_aa_core` contains CPU frame-admission contracts only.
 `MayRecord` is not a successful dispatch or an Active status. An experimental
-offscreen Vulkan SMAA recorder now exists, with no simulator adapter. A future
+offscreen Vulkan SMAA recorder now exists. A separate exact-version Windows
+adapter is undergoing live evaluation; see [its scope](LIVE-TEST.md). Every
 simulator Vulkan or Metal adapter must validate actual image
 formats/usages, device ownership, barriers and completion, and return evidence
 from the current frame/session before UI can say AA is active.

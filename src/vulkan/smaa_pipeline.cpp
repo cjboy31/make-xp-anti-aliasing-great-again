@@ -53,9 +53,8 @@ SmaaPipeline::SmaaPipeline(VkDevice device, VkExtent2D extent, const SmaaViews& 
         VkDescriptorSetLayoutCreateInfo sl{VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO};
         sl.bindingCount = static_cast<unsigned>(bindings.size()); sl.pBindings = bindings.data();
         check(vkCreateDescriptorSetLayout(device_, &sl, nullptr, &set_layout_), "Create SMAA descriptors");
-        VkPushConstantRange range{VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, 16};
         VkPipelineLayoutCreateInfo pl{VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO};
-        pl.setLayoutCount = 1; pl.pSetLayouts = &set_layout_; pl.pushConstantRangeCount = 1; pl.pPushConstantRanges = &range;
+        pl.setLayoutCount = 1; pl.pSetLayouts = &set_layout_;
         check(vkCreatePipelineLayout(device_, &pl, nullptr, &layout_), "Create SMAA pipeline layout");
         VkDescriptorPoolSize count{VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 9};
         VkDescriptorPoolCreateInfo dp{VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO};
@@ -107,6 +106,12 @@ SmaaPipeline::SmaaPipeline(VkDevice device, VkExtent2D extent, const SmaaViews& 
             stages[0].stage = VK_SHADER_STAGE_VERTEX_BIT; stages[0].module = vs.handle; stages[0].pName = "main";
             stages[1] = {VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO};
             stages[1].stage = VK_SHADER_STAGE_FRAGMENT_BIT; stages[1].module = fs.handle; stages[1].pName = "main";
+            const std::array<float, 2> dimensions{float(extent.width), float(extent.height)};
+            const std::array<VkSpecializationMapEntry, 2> entries{{{0, 0, sizeof(float)}, {1, sizeof(float), sizeof(float)}}};
+            VkSpecializationInfo specialization{};
+            specialization.mapEntryCount = 2; specialization.pMapEntries = entries.data();
+            specialization.dataSize = sizeof(dimensions); specialization.pData = dimensions.data();
+            stages[0].pSpecializationInfo = stages[1].pSpecializationInfo = &specialization;
             VkPipelineVertexInputStateCreateInfo vi{VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO};
             VkPipelineInputAssemblyStateCreateInfo ia{VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO};
             ia.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
@@ -139,9 +144,6 @@ void SmaaPipeline::record_pass(VkCommandBuffer commands, unsigned pass) const {
     vkCmdBeginRenderPass(commands, &begin, VK_SUBPASS_CONTENTS_INLINE);
     vkCmdBindPipeline(commands, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelines_[pass]);
     vkCmdBindDescriptorSets(commands, VK_PIPELINE_BIND_POINT_GRAPHICS, layout_, 0, 1, &sets_[pass], 0, nullptr);
-    const std::array<float, 4> metrics{1.0f / extent_.width, 1.0f / extent_.height,
-                                      static_cast<float>(extent_.width), static_cast<float>(extent_.height)};
-    vkCmdPushConstants(commands, layout_, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, 16, metrics.data());
     vkCmdDraw(commands, 3, 1, 0, 0);
     vkCmdEndRenderPass(commands);
 }

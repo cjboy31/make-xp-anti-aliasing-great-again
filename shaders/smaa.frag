@@ -2,8 +2,9 @@
 #extension GL_GOOGLE_include_directive : require
 // Edges and lookup data use UNORM views. The neighborhood color input and
 // attachment use sRGB views, so interpolation/blending happens in linear light.
-layout(push_constant) uniform Parameters { vec4 metrics; } params;
-#define SMAA_RT_METRICS params.metrics
+layout(constant_id=0) const float frameWidth = 1.0;
+layout(constant_id=1) const float frameHeight = 1.0;
+#define SMAA_RT_METRICS vec4(1.0/frameWidth, 1.0/frameHeight, frameWidth, frameHeight)
 #define SMAA_GLSL_4 1
 #define SMAA_PRESET_HIGH 1
 #define SMAA_INCLUDE_VS 0

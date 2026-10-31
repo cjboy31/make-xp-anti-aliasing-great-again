@@ -25,8 +25,9 @@ refinement, shimmer stabilization and vector/history diagnostics. Use the
 **Renderer** tab to save Native AA, FSR/NR/frame generation or the original
 simulator for your next launch. Only one renderer processes a session; switching
 requires restart and retains each mod's settings. The shared selector is merged
-in both projects; the companion FSR installer is being prepared. Update both
-mods for load-order independent switching. See [coexistence](docs/RENDERER-SELECTION.md).
+in both projects. Update Native AA to 0.3.0 and install
+[FSR 0.7.3 Normal](https://github.com/cjboy31/xplane-fsr-vulkan/releases/tag/v0.7.3-alpha)
+for load-order independent switching. See [coexistence](docs/RENDERER-SELECTION.md).
 
 The offscreen Vulkan SMAA recorder has synthetic and private captured-scene
 checks. A separate, explicitly enabled Windows scene adapter is undergoing

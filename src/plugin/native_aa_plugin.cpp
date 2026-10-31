@@ -38,7 +38,7 @@ XPLMMenuID menu{};
 int parent_item=-1;
 XPLMCommandRef toggle_command{},panel_command{};
 std::filesystem::path settings_file;
-xp_renderer::Choice renderer_choice=xp_renderer::Choice::automatic;
+xp_renderer::Choice renderer_choice=xp_renderer::Choice::native_aa;
 std::string session_owner;
 std::string notice="Choose an AA method. All controls on this screen apply live.";
 unsigned requested_sequence=0;
@@ -183,8 +183,7 @@ void draw_content(XPLMWindowID id){
         const int half=(width-10)/2;
         button({x,t-293,x+half,t-339},"Native AA",90,renderer_choice==xp_renderer::Choice::native_aa);
         button({x+half+10,t-293,right,t-339},"FSR / NR / frame generation",91,renderer_choice==xp_renderer::Choice::fsr);
-        button({x,t-353,x+half,t-399},"Original simulator - both Off",92,renderer_choice==xp_renderer::Choice::off);
-        button({x+half+10,t-353,right,t-399},"Automatic - Native AA if installed",93,renderer_choice==xp_renderer::Choice::automatic);
+        button({x,t-353,right,t-399},"Original simulator - both Off",92,renderer_choice==xp_renderer::Choice::off);
         text(x,t-432,"Saved choice: "+std::string(xp_renderer::label(renderer_choice)),white);
         text(x,t-459,"Close X-Plane normally, then reopen with your usual launcher. Your AA/FSR choices are retained.",muted);
         text(x,t-486,"Native AA needs Full input scale. FSR requires its matching graphics settings and installed runtime.",muted);
@@ -218,9 +217,9 @@ int mouse(XPLMWindowID,int x,int y,XPLMMouseStatus event,void*){
             if(action==99){help_action=-1;return 1;}
             if(action==41){slider=0;if(pending_disk)persist();XPLMSetWindowIsVisible(window,0);return 1;}
             if(action>=30 && action<=34){slider=action;slider_rect=hits[i].rect;adjust(x);return 1;}
-            if(action>=60 && action<=63){help_action=-1;panel_tab=unsigned(action-60);if(panel_tab==2)renderer_choice=xp_renderer::read(settings_file.parent_path().parent_path().parent_path());return 1;}
-            if(action>=90 && action<=93){
-                const xp_renderer::Choice values[]{xp_renderer::Choice::native_aa,xp_renderer::Choice::fsr,xp_renderer::Choice::off,xp_renderer::Choice::automatic};
+            if(action>=60 && action<=63){help_action=-1;panel_tab=unsigned(action-60);if(panel_tab==2)renderer_choice=xp_renderer::visibleChoice(settings_file.parent_path().parent_path().parent_path());return 1;}
+            if(action>=90 && action<=92){
+                const xp_renderer::Choice values[]{xp_renderer::Choice::native_aa,xp_renderer::Choice::fsr,xp_renderer::Choice::off};
                 xp_renderer::save(settings_file.parent_path().parent_path().parent_path(),values[action-90]);renderer_choice=values[action-90];
                 notice="Saved: "+std::string(xp_renderer::label(renderer_choice))+". Restart X-Plane to switch; current renderer is unchanged.";return 1;
             }
@@ -304,7 +303,7 @@ PLUGIN_API int XPluginStart(char* name,char* signature,char* description){
         XPLMEnableFeature("XPLM_USE_NATIVE_PATHS",1);XPLMEnableFeature("XPLM_USE_NATIVE_WIDGET_WINDOWS",1);
         char root[4096]{};XPLMGetSystemPath(root);settings_file=std::filesystem::u8path(root)/"Output/preferences/NativeAA.ini";
         session_owner=xp_renderer::environment("XP_RENDERER_OWNER");
-        try{renderer_choice=xp_renderer::read(std::filesystem::u8path(root));}catch(const std::exception& e){notice=e.what();}
+        try{renderer_choice=xp_renderer::visibleChoice(std::filesystem::u8path(root));}catch(const std::exception& e){notice=e.what();}
         std::ifstream input(settings_file,std::ios::binary);std::string contents(4097,'\0');
         if(input){input.read(contents.data(),4097);contents.resize(std::size_t(input.gcount()));settings=parse_settings(contents);}
         channel.open();requested_sequence=channel.write_controls(settings);

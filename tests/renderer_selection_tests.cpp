@@ -10,6 +10,8 @@ int main(int argc,char** argv){try{
     check(argc==2,"Fresh fixture root required");const auto root=std::filesystem::absolute(std::string(argv[1])+"-"+r::pid());
     check(!std::filesystem::exists(root),"Fixture already exists");std::filesystem::create_directories(root/"Resources/plugins/NativeAA");
     std::ofstream(root/"Resources/plugins/NativeAA/standalone.enabled")<<"NativeAAStandalone=1\n";
+    check(r::visibleChoice(root)==r::Choice::native_aa,"Legacy default did not resolve to an explicit visible choice");
+    r::save(root,r::Choice::fsr);check(r::visibleChoice(root)==r::Choice::fsr,"Explicit FSR choice changed during migration");
     for(auto choice:{r::Choice::automatic,r::Choice::native_aa,r::Choice::fsr,r::Choice::off}){
         r::save(root,choice);check(r::read(root)==choice,"Choice did not round-trip");
         for(bool aa_first:{false,true}){

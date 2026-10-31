@@ -11,6 +11,10 @@ foreach($entry in @(@('native_scene_test.vert','native-scene.vert.spv'),@('nativ
  & $glsl -V --target-env vulkan1.3 (Join-Path $PSScriptRoot ('shaders/'+$entry[0])) -o (Join-Path $shaders $entry[1])
  if($LASTEXITCODE -ne 0){throw 'Native scene test shader failed'}
 }
+foreach($entry in @(@('native_taa_scene_test.vert','native-taa-scene.vert.spv'),@('native_taa_scene_test.frag','native-taa-scene.frag.spv'),@('native_taa_post_test.frag','native-taa-post.frag.spv'))){
+ & $glsl -V --target-env vulkan1.3 ('shaders/'+$entry[0]) -o (Join-Path $shaders $entry[1])
+ if($LASTEXITCODE -ne 0){throw 'Native TAA scene shader failed'}
+}
 $flags=@('-std=c++17','-O2','-static','-Wall','-Wextra','-Wpedantic','-Werror','-Wno-missing-field-initializers','-DWIN32_LEAN_AND_MEAN','-DNOMINMAX',('-I'+(Join-Path $headers 'include')),('-I'+(Join-Path $PSScriptRoot 'include')),('-I'+(Join-Path $PSScriptRoot 'third_party/smaa')))
 & $cc @flags src/vulkan/smaa_pipeline.cpp src/vulkan/compute_smaa_pipeline.cpp src/vulkan/camera_motion_pipeline.cpp src/motion.cpp tests/native_scene_layer_tests.cpp build/vulkan/vulkan-loader.lib -o (Join-Path $out 'native_scene_layer_tests.exe')
 if($LASTEXITCODE -ne 0){throw 'Native scene fixture compilation failed'}
@@ -33,6 +37,7 @@ $env:VK_LOADER_LAYERS_DISABLE='~implicit~'
 $env:VK_INSTANCE_LAYERS='VK_LAYER_NATIVE_AA_live_test'
 $env:NATIVE_AA_EXE=Join-Path $out 'native_scene_layer_tests.exe'
 $env:NATIVE_AA_TEST_SHADER=(Get-FileHash -LiteralPath (Join-Path $shaders 'native-scene.frag.spv') -Algorithm SHA256).Hash.ToLowerInvariant()
+$env:NATIVE_AA_TEST_TAA_SHADER=(Get-FileHash -LiteralPath (Join-Path $shaders 'native-taa-post.frag.spv') -Algorithm SHA256).Hash.ToLowerInvariant()
 $env:NATIVE_AA_LIVE_TEST='1'
 $env:DISABLE_XPFSR24='1'
 $env:NATIVE_AA_SHADERS=$shaders

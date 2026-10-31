@@ -1,9 +1,11 @@
 # Motion vectors and AA alternatives
 
 Research and first implementation milestone: 2026-10-31. This experiment is
-separate from the tested spatial-AA milestone. A GPU temporal resolve is now
-implemented and tested offscreen; no verified live simulator motion/jitter
-provider is connected, so the in-sim TAA choice remains unavailable.
+separate from the tested spatial-AA milestone. The `experimental/live-taa`
+branch now connects an original camera/depth TAA implementation to the Windows
+scene adapter. Its injected-layer and offscreen checks pass; private simulator
+quality/stability validation is still in progress. It supplies estimated camera
+motion with rejection, not general native object/cloud velocity.
 
 ## Source review and decisions
 
@@ -74,7 +76,7 @@ flow-grid rejection and history reset gates. Linux Lavapipe and the four-platfor
 CPU CI run these checks; see Actions for each commit's actual result. These are
 synthetic tests, not real X-Plane motion-field validation.
 
-## TAA evaluation plan
+## Generic temporal-input experiment
 
 The original `TemporalResolvePipeline` now consumes native-size current/history
 color, canonical motion/predicted previous depth, actual previous depth and a
@@ -112,6 +114,43 @@ or imported GPL renderer is substituted to make a selectable checkbox.
 5. Test actual panning on the ground, moving aircraft, cloud edges, fine textures,
    cockpit text, scene changes, thin-line shimmer, HDR and memory pressure. Compare
    matched video and error/flow measurements, not a favorable still screenshot.
+
+## Connected camera/depth TAA branch
+
+The new `NativeTaaPipeline` uses a different, explicit history convention:
+resolved color history is stored on an unjittered output grid. Native raw color
+and depth retain their recorded geometry jitter. Previous jitter is used for
+raw/depth lookups, never added a second time to resolved-color reprojection.
+A centered eight-sample sequence is applied through native geometry viewports,
+without writing projection datarefs or controlling the camera. UI and fullscreen
+postprocessing viewports are restored. Only the captured native `gbuf-depth`
+role, supported formats/layouts, full size, primary one-time command buffers
+and matching fresh camera epochs are admitted.
+
+Native D32S8 depth, including MSAA, is resolved into one R32F snapshot. TAA reuses
+the spatial scratch images for raw/color history and adds one previous R32F depth
+image. The existing 384 MiB budget is shared; no full multisampled frame cache or
+motion-vector render target is allocated. The adapter restores depth/stencil
+layouts and native compute state, widens inserted-work semaphore scopes, and
+tracks temporal completions separately. Retired pipeline/layout state refuses
+injection. Resize, view/session/epoch/projection changes, cuts, stale metadata,
+sequence gaps, Off and spatial switching discard temporal reuse.
+
+Camera matrices do not become object vectors. The shader rejects disoccluded
+depth and raw-color changes and clips history in current-neighborhood luminance/
+chroma bounds. Sky/invalid depth uses fresh samples. Clouds over geometry, water,
+reflections and moving objects can still need a richer provider; residual
+confidence is a heuristic, not proof of static geometry. This is why the mode
+remains experimental and retains spatial fallback.
+
+R9700 synthetic checks: 56 resolve frames, 16 actual sampled D32S8 depth readbacks
+across supported 1x/2x/4x/8x counts, and zero standard/synchronization validation
+messages. A separate supersampled diagonal reference gave fixed-grid error
+0.00225904 with history versus 0.00273509 with fresh-only reconstruction.
+These are synthetic errors, not simulator image-quality/FPS measurements.
+The live-layer fixture adds 32 TAA frames with resets, both viewport Y directions,
+resize, a same-frame unmodified alpha reference, native compute descriptor/
+dynamic-offset/push-constant restoration and zero validation messages.
 
 SMAA 1x remains the no-history baseline. Native MSAA may be a useful optional
 pre-resolve partner; it addresses geometry coverage at a higher sample cost.

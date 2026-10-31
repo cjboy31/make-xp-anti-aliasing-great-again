@@ -16,11 +16,13 @@ quality/blend controls, an independent FXAA 3.11 alternative and fresh
 GPU-completion status. Open **Plugins > Native AA > Open AA controls** after
 installing the checked developer build; see [controls and setup](docs/CONTROLS.md).
 
-The temporal-AA experiment now includes an original, offscreen GPU temporal
-resolve with reprojection, depth/reactive rejection, neighborhood clipping and
-history-reset gates. It does **not** yet consume verified live simulator
-motion/jitter inputs, so TAA is unavailable in the live panel. See
-[motion research and AA alternatives](docs/MOTION-AND-TEMPORAL-AA.md).
+This branch connects experimental **native-resolution TAA** to the Windows
+scene adapter and live panel. It uses geometry jitter, a bounded depth snapshot,
+camera/depth reprojection, color/depth rejection and clipped temporal history.
+Camera motion is estimated; X-Plane does not supply general object/cloud vectors.
+Sky/invalid depth uses fresh samples. Unsupported capture falls back visibly to
+SMAA. Private flight validation is in progress; this is not a packaged TAA release.
+See [motion research and AA alternatives](docs/MOTION-AND-TEMPORAL-AA.md).
 
 ## Direction
 

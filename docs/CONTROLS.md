@@ -21,8 +21,13 @@ the previous inventory; modified/unknown user files are retained.
   lower subpixel filtering preserves more fine detail, higher filtering softens
   small-scale aliasing. A perceptual-luma prepass detects red/blue edges too.
 - AA Blend: 100% applies the selected result; 0% retains the native image.
-- TAA: development is ongoing. A disabled label is not a functioning TAA mode.
-  Temporal methods require validated motion, jitter and history handling.
+- TAA (experimental): native-resolution temporal reconstruction using jittered
+  geometry and camera/depth motion estimates. Select it live; no FSR or restart
+  is required. History weight 0..95% balances response against accumulation.
+  Reset temporal history retries capture and discards the old history epoch.
+  Moving pixels are rejected using depth and raw-color residuals. General
+  object/cloud motion is not available; this is not a promise of no ghosting.
+  Unsupported input uses a clearly identified SMAA fallback.
 - Restore defaults: SMAA High, enabled, 100% blend, 75% FXAA subpixel filtering.
 
 Set X-Plane's input/render scale to **Full** (native resolution). Do not enable
@@ -36,6 +41,10 @@ renderer heartbeat and the matching control sequence. OFF, WAITING, BYPASSED
 and RENDERER UNAVAILABLE have separate meanings. A saved selection alone does
 not prove that AA is running. Counters reset with each simulator process;
 renderer logs use new process/session filenames under `Output/NativeAA`.
+TAA ACTIVE requires its own new fenced temporal completions. A saved TAA choice,
+SMAA fallback or completed spatial frame cannot establish temporal activity.
+Camera metadata is read through public datarefs; no camera control or projection
+dataref is written. Jitter is scoped to admitted native geometry viewports.
 
 The installed per-user Vulkan discovery entry admits only the exact simulator
 beside this plugin and its explicit standalone marker. It can request a

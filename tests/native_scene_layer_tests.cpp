@@ -141,6 +141,7 @@ struct AsyncReadback {
     }
     ~AsyncReadback(){vkDeviceWaitIdle(c.device);vkDestroySemaphore(c.device,ready,nullptr);vkDestroyFence(c.device,fence,nullptr);vkDestroyCommandPool(c.device,pool,nullptr);}
 };
+#include "native_taa_layer_fixture.hpp"
 }
 int main(int argc,char** argv) {
     try {
@@ -191,6 +192,7 @@ int main(int argc,char** argv) {
             off.enabled=true;off.strength=0;ui.write_controls(off);
             need(program.render(scene,staging)==baseline,"Zero strength must retain native image");
         }
+        if(!bypass)native_taa_layer_checks(c,shaders);
         need(c.allocated_bytes==0,"Native fixture retained allocations");c.close();need(c.errors==0,"Layer validation errors");need(c.warnings==0,"Layer validation warnings");
         std::cout<<"Native scene layer PASS: "<<(bypass?"failure bypass":"46 injected frames, including 10 live method/quality/strength cases, 12 two-queue handoffs, 2 resizes, state restoration, UI bypass and live On/Off")<<", zero validation messages.\n";return 0;
     }catch(const std::exception& e){std::cerr<<"Native scene layer FAIL: "<<e.what()<<'\n';return 1;}

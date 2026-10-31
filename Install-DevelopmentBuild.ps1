@@ -17,8 +17,8 @@ if(-not $NoOrdinaryLauncherIntegration){
 foreach($inputFile in @($build.inputs)+@($ui.inputs)){
  if((Get-FileHash -LiteralPath (Join-Path $PSScriptRoot $inputFile.path) -Algorithm SHA256).Hash -ne $inputFile.sha256){throw ('Source/shader changed after checked build: '+$inputFile.path)}
 }
-$shaderFiles=@(Get-ChildItem -LiteralPath (Join-Path $PSScriptRoot 'build/vulkan/shaders') -File|Where-Object{$_.Name -match '^(live-smaa-|fxaa-).*\.spv$'})
-if($shaderFiles.Count -ne 14){throw 'Expected all 12 SMAA-quality and 2 FXAA shaders'}
+ $shaderFiles=@(Get-ChildItem -LiteralPath (Join-Path $PSScriptRoot 'build/vulkan/shaders') -File|Where-Object{$_.Name -match '^(live-smaa-[0-3]-[0-2]|fxaa-[02]|native-taa|native-depth-(1|ms))\.comp\.spv$'})
+ if($shaderFiles.Count -ne 17){throw 'Expected 12 SMAA-quality, 2 FXAA and 3 native TAA/depth shaders'}
 $destination=[IO.Path]::GetFullPath((Join-Path $root 'Resources/plugins/NativeAA'))
 $expected=[IO.Path]::GetFullPath((Join-Path $root 'Resources/plugins'))+[IO.Path]::DirectorySeparatorChar
 if(-not $destination.StartsWith($expected,[StringComparison]::OrdinalIgnoreCase) -or (Split-Path $destination -Leaf) -ne 'NativeAA'){throw 'Destination escaped the selected plugin directory'}

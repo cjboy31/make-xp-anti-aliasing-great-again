@@ -12,7 +12,7 @@
  F(CreatePipelineLayout) F(DestroyPipelineLayout) F(CreateDescriptorPool) F(DestroyDescriptorPool) \
  F(AllocateDescriptorSets) F(UpdateDescriptorSets) F(CreateCommandPool) F(DestroyCommandPool) \
  F(AllocateCommandBuffers) F(FreeCommandBuffers) F(BeginCommandBuffer) F(ResetCommandBuffer) \
- F(CmdBeginRendering) F(CmdEndRendering) F(CmdBindPipeline) F(CmdBindDescriptorSets) \
+ F(CmdBeginRendering) F(CmdEndRendering) F(CmdBindPipeline) F(CmdBindDescriptorSets) F(CmdSetViewport) F(CmdSetViewportWithCount) \
  F(CmdDispatch) F(CmdDraw) F(CmdDrawIndexed) F(CmdDrawIndirect) F(CmdDrawIndexedIndirect) F(CmdPipelineBarrier) F(CmdCopyImage) F(CmdCopyBufferToImage) F(CmdUpdateBuffer) \
  F(CmdExecuteCommands) F(QueueSubmit) F(QueueSubmit2) F(WaitForFences) F(GetFenceStatus) F(ResetFences) F(DestroyFence) \
  F(SetDebugUtilsObjectNameEXT)

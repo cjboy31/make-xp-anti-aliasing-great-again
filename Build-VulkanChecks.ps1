@@ -29,6 +29,12 @@ foreach ($aaPass in @(0,2)) {
 }
 & $glsl -V --target-env vulkan1.1 (Join-Path $PSScriptRoot 'shaders/camera_motion.comp') -o (Join-Path $shaders 'camera-motion.comp.spv')
 if ($LASTEXITCODE -ne 0) { throw 'Camera motion shader compilation failed' }
+& $glsl -V --target-env vulkan1.1 shaders/native_taa.comp -o (Join-Path $shaders 'native-taa.comp.spv')
+if ($LASTEXITCODE -ne 0) { throw 'Native TAA shader compilation failed' }
+& $glsl -V --target-env vulkan1.1 shaders/native_depth.comp -o (Join-Path $shaders 'native-depth-1.comp.spv')
+if ($LASTEXITCODE -ne 0) { throw 'Native depth shader compilation failed' }
+& $glsl -V --target-env vulkan1.1 -DDEPTH_MSAA=1 shaders/native_depth.comp -o (Join-Path $shaders 'native-depth-ms.comp.spv')
+if ($LASTEXITCODE -ne 0) { throw 'Native MSAA depth shader compilation failed' }
 $exports = & (Join-Path $compilerBin 'llvm-readobj.exe') --coff-exports (Join-Path $env:WINDIR 'System32/vulkan-1.dll')
 $names = @($exports | ForEach-Object { if ($_ -match '^\s*Name: (vk\w+)$') { $matches[1] } })
 if ($names.Count -lt 100) { throw 'Installed Vulkan loader exports unavailable' }

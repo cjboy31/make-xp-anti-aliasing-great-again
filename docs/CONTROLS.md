@@ -44,4 +44,4 @@ The optional [shadow script](../extras/shadows/README.txt) is installed separate
 with FlyWithLua. It starts Off. It does not require either AA renderer.
 
 [Discord help](https://discord.gg/yh396QNgHZ) ·
-[Developer build and validation](BUILD-AND-VALIDATION.md)
+[Developer build and validation](https://github.com/cjboy31/make-xp-anti-aliasing-great-again/blob/main/docs/BUILD-AND-VALIDATION.md)

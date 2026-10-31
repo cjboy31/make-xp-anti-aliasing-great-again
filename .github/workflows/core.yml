@@ -24,3 +24,17 @@ jobs:
         run: cmake --build build --config Release --parallel 2
       - name: Test CPU contracts only
         run: ctest --test-dir build -C Release --output-on-failure
+      - name: Parse Windows packaging scripts
+        if: runner.os == 'Windows'
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop'
+          foreach($script in Get-ChildItem -Path . -Filter *.ps1 -Recurse -File | Where-Object { $_.FullName -notmatch '[\\/]build[\\/]' }) {
+            $tokens=$null; $errors=$null
+            [System.Management.Automation.Language.Parser]::ParseFile($script.FullName,[ref]$tokens,[ref]$errors)|Out-Null
+            if($errors) { $errors; throw ('Syntax error: '+$script.Name) }
+          }
+      - name: Compile original Windows setup
+        if: runner.os == 'Windows'
+        shell: powershell
+        run: .\Build-Setup.ps1

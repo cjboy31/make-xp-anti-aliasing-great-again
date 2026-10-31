@@ -32,6 +32,17 @@ $installedDllName='native-aa-'+$hash.Substring(0,12).ToLowerInvariant()+'.dll'
 $owned=@('64/win.xpl',('renderer/'+$installedDllName),'renderer/native-aa.json','README.txt','notices/NativeAA-MIT.txt','notices/SMAA-MIT.txt','notices/FXAA-source-and-BSD-notice.txt','notices/FXAA-Intel-Apache.txt','notices/XPLM-SDK-license.txt')
 $owned+=@($shaderFiles|ForEach-Object{'renderer/shaders/'+$_.Name})
 if(-not $NoOrdinaryLauncherIntegration -or (Test-Path -LiteralPath (Join-Path $destination 'standalone.enabled'))){$owned+='standalone.enabled'}
+# Check all existing leaf/ancestor paths before copying or retiring owned files.
+$priorPaths=if($previous){@($previous.files|ForEach-Object{$_.path})}else{@()}
+foreach($relative in @($owned)+@($priorPaths)+@('installation.json')){
+ $absolute=[IO.Path]::GetFullPath((Join-Path $destination $relative))
+ if([IO.Path]::IsPathRooted($relative) -or $relative.Contains(':') -or -not $absolute.StartsWith($destination+[IO.Path]::DirectorySeparatorChar,[StringComparison]::OrdinalIgnoreCase)){throw 'Installation inventory path escaped NativeAA'}
+ $check=$absolute
+ while($check -and ($check -eq $destination -or $check.StartsWith($destination+[IO.Path]::DirectorySeparatorChar,[StringComparison]::OrdinalIgnoreCase))){
+  if((Test-Path -LiteralPath $check) -and ((Get-Item -LiteralPath $check -Force).Attributes -band [IO.FileAttributes]::ReparsePoint)){throw 'Refusing redirected installation file/directory'}
+  $check=Split-Path -Parent $check
+ }
+}
 foreach($folder in @('64','renderer/shaders','notices')){New-Item -ItemType Directory -Path (Join-Path $destination $folder) -Force|Out-Null}
 Copy-Item -LiteralPath $plugin -Destination (Join-Path $destination '64/win.xpl') -Force
 if(-not(Test-Path -LiteralPath (Join-Path $destination ('renderer/'+$installedDllName)))){
@@ -66,6 +77,6 @@ if($previous -and [string]::Equals($previous.simulator,$root,[StringComparison]:
 }
 # Record only shipped files, never claim ownership of a user's additional files.
 $inventory=@($owned|ForEach-Object{[ordered]@{path=$_;sha256=(Get-FileHash -LiteralPath (Join-Path $destination $_) -Algorithm SHA256).Hash}})
-[IO.File]::WriteAllText((Join-Path $destination 'installation.json'),([ordered]@{product='NativeAA';version='0.2.0-dev';simulator=$root;files=$inventory}|ConvertTo-Json -Depth 5),[Text.UTF8Encoding]::new($false))
-Write-Output ('Installed development controls and checked AA renderer: '+$destination)
+[IO.File]::WriteAllText((Join-Path $destination 'installation.json'),([ordered]@{product='NativeAA';version='0.2.0-alpha';simulator=$root;files=$inventory}|ConvertTo-Json -Depth 5),[Text.UTF8Encoding]::new($false))
+Write-Output ('Installed Native AA 0.2.0-alpha controls and checked AA renderer: '+$destination)
 Write-Output 'Use Plugins > Native AA > Open AA controls. Set X-Plane input scale to Full. No FSR/controller/camera settings were changed.'

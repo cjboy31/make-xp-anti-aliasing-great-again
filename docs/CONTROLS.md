@@ -1,12 +1,24 @@
-# Native AA - in-sim controls (Windows development build)
+# Native AA - in-sim controls (Windows alpha)
 
 Open **Plugins > Native AA > Open AA controls**. Enable or disable processing
 with the ON/OFF button. Changes apply live and save automatically to
 `Output/preferences/NativeAA.ini` in this simulator installation.
 
+For the prebuilt release, download the Windows ZIP asset, extract all files,
+close X-Plane, run **NativeAA-Setup.exe** and select the folder containing
+`X-Plane.exe`. Your usual or third-party launcher can then start the simulator.
+Use the **Uninstall** button in **NativeAA-Setup.exe** with X-Plane closed to remove the recorded
+unchanged plugin files and its own Vulkan discovery value. Settings are retained.
+See [README-FIRST.txt](../README-FIRST.txt) for full setup and troubleshooting.
+
 Developer build order (Windows x64): `Build-VulkanChecks.ps1`,
 `Build-LivePrototype.ps1`, `Test-LivePrototype.ps1`, `Test-Activation.ps1`,
 `Build-Plugin.ps1`, then `Install-DevelopmentBuild.ps1 -Simulator <X-Plane root>`.
+For a release package, also run `Build-Setup.ps1`, then
+`Build-ReleasePackage.ps1` and `Test-ReleasePackage.ps1 -Zip <package.zip>`.
+The setup executable uses Windows' built-in .NET Framework and runs without
+changing PowerShell policy. The source/receipt-checked script installer remains
+available for development where script execution is permitted.
 The scripts take explicit compiler, Vulkan-header, glslang, validation-layer and
 external X-Plane SDK paths. Installation refuses stale build/test/hash receipts.
 Only this plugin's own per-user Vulkan value is written; existing registry keys
@@ -63,5 +75,5 @@ Optional commands `native_aa/toggle` and `native_aa/open_panel` can be bound
 by the user in X-Plane. No bindings are installed automatically. The plugin
 does not control the camera, joystick, aircraft, resolution or UI scaling.
 
-This is a Windows developer build, not a claim of Linux/Metal simulator support.
+This is a Windows alpha build, not a claim of Linux/Metal simulator support.
 Source, licenses and build instructions: https://github.com/cjboy31/make-xp-anti-aliasing-great-again

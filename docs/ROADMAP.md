@@ -7,10 +7,20 @@
 - CMake and four hosted OS/architecture build/test jobs.
 - Platform-specific access and visual-validation gates.
 
+## First offscreen rendering milestone
+
+- Pinned MIT SMAA shader and lookup-table sources with verified hashes/notices.
+- Three-pass Vulkan SMAA 1x recorder; native dimensions, sRGB-aware blending,
+  preserved scene alpha and cleared intermediate images.
+- Original synthetic reference/readback checks, reuse/teardown and current-run
+  result status. Linux software-Vulkan validation CI is configured.
+- Local AMD R9700 run: 61 frames, all 45 diagonal-reference cases improved,
+  zero standard/synchronization validation errors or warnings. These are not
+  X-Plane screenshots or flight-quality/performance evidence.
+
 ## First working prototype
 
-1. Pin and license-review SMAA shader/lookup-table sources; compile an isolated
-   Vulkan test with known test patterns and CPU/GPU reference readbacks.
+1. Extend the offscreen Vulkan/reference checks to more scene patterns and drivers.
 2. Find and verify an independent native-resolution X-Plane Vulkan scene boundary
    with FSR disabled, before UI. Test both Windows and native Linux activation.
    Bypass when ambiguous instead of guessing another image.

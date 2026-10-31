@@ -3,7 +3,7 @@
 | Evidence | Windows Vulkan | Linux Vulkan | macOS Metal |
 | --- | --- | --- | --- |
 | Portable core CI | Configured; see Actions for result | Configured; see Actions for result | Configured for arm64 and Intel; see Actions for result |
-| Offscreen AA shader/reference image | Not implemented | Not implemented | Not implemented |
+| Offscreen AA shader/reference image | R9700 synthetic validation passed | Lavapipe validation CI configured; see Actions | Not implemented |
 | Independent native X-Plane scene/UI access | Not validated | Not validated | Not established |
 | Real flight quality/timing/memory | Not tested | Not tested | Not tested |
 | Install/update/removal package | Not available | Not available | Not available |

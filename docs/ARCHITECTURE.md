@@ -13,8 +13,9 @@ edge-detection/perceptual conversion, alpha and output-transfer handling; passin
 PQ or scene-linear values through an SDR shader is not acceptable.
 
 The portable `native_aa_core` contains CPU frame-admission contracts only.
-`MayRecord` is not a successful dispatch or an Active status. All backends are
-currently absent. A future Vulkan or Metal adapter must validate actual image
+`MayRecord` is not a successful dispatch or an Active status. An experimental
+offscreen Vulkan SMAA recorder now exists, with no simulator adapter. A future
+simulator Vulkan or Metal adapter must validate actual image
 formats/usages, device ownership, barriers and completion, and return evidence
 from the current frame/session before UI can say AA is active.
 
@@ -36,6 +37,9 @@ or failed dispatch. Use bounded per-frame scratch resources, completion-gated
 reuse and explicit resize/device-loss teardown. No per-frame device-wide wait,
 readback or heap scan is allowed in the eventual production fast path. The
 current CPU core does none of these operations and allocates no graphics memory.
+The Vulkan recorder allocates only at construction and records three passes
+without submitting or waiting. The offscreen test fixture intentionally uses
+synchronous transfers/fences for correctness; it is not a production scheduler.
 
 ## UI and settings (planned)
 

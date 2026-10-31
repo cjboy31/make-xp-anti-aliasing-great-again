@@ -4,11 +4,11 @@ Independent, native-resolution anti-aliasing research for X-Plane 12.
 The goal is a lightweight in-sim plugin for people who want smoother edges
 without FSR, upscaling, neural rendering or frame generation.
 
-**Development foundation only. There is no working AA plugin, installer or
-simulator rendering backend in this repository yet.** The portable C++ core
-checks whether a frame is eligible for future processing; it does not filter
-pixels, inject a renderer or change X-Plane settings. Build checks do not prove
-simulator or GPU compatibility.
+**Experimental offscreen prototype. There is no installable X-Plane AA plugin
+or simulator scene integration yet.** The Vulkan SMAA recorder filters original
+synthetic test images. The portable C++ core checks frame eligibility. Neither
+component injects into X-Plane or changes simulator settings. Read
+[prototype scope and reproduction](docs/SMAA-PROTOTYPE.md) before testing.
 
 ## Direction
 
@@ -30,8 +30,8 @@ future evaluation requiring verified jitter/motion and history invalidation.
 
 | Target | Intended integration | Current state |
 | --- | --- | --- |
-| Windows x64 | Vulkan scene processing | Portable core; renderer not implemented |
-| Linux x64 | Native Vulkan scene processing | Portable core; renderer not implemented |
+| Windows x64 | Vulkan scene processing | Offscreen SMAA tested on AMD R9700; no simulator integration |
+| Linux x64 | Native Vulkan scene processing | Offscreen Vulkan fixture/CI; no simulator integration |
 | macOS arm64 / x86_64 | Native Metal scene processing | Portable core; Metal scene-access investigation required |
 
 The CI matrix builds and runs CPU contract tests on Windows, Linux, Apple
@@ -50,9 +50,10 @@ cmake --build build --config Release
 ctest --test-dir build -C Release --output-on-failure
 ```
 
-The tests reject reduced-resolution inputs, unsafe frame ownership, mismatched
+The CPU tests reject reduced-resolution inputs, unsafe frame ownership, mismatched
 sessions/devices, unresolved MSAA, unknown color/UI boundaries and insufficient
-scratch budgets. They do not dispatch SMAA or test visual quality.
+scratch budgets. Enable `NATIVE_AA_BUILD_VULKAN_TESTS` for the separate offscreen
+GPU checks described in [the prototype guide](docs/SMAA-PROTOTYPE.md).
 
 See [architecture](docs/ARCHITECTURE.md), [implementation plan](docs/ROADMAP.md),
 [validation gates](docs/VALIDATION.md) and [contributing](CONTRIBUTING.md).
@@ -66,6 +67,7 @@ must not silently rewrite the other plugin's preferences.
 
 [Community Discord](https://discord.gg/yh396QNgHZ)
 
-Original code is MIT licensed. No third-party shader, SDK runtime, model,
-simulator asset or user configuration is bundled. See
+Original code is MIT licensed. The pinned MIT SMAA shader/lookup-table sources
+retain their upstream notices. No SDK runtime, model, simulator asset or user
+configuration is bundled. See
 [dependency research and notices](THIRD_PARTY.md).

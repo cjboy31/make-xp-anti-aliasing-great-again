@@ -9,6 +9,7 @@
 #include <string>
 #include <fstream>
 #include <sstream>
+#include <type_traits>
 #include <fcntl.h>
 #include <sys/mman.h>
 #include <sys/file.h>
@@ -136,6 +137,7 @@ public:
         return false;
     }
     void write_camera(const SceneCamera& camera){
+        static_assert(std::is_trivially_copyable_v<SceneCamera>,"IPC camera must be trivially copyable");
         if(!data_)return;
         std::array<std::uint32_t,LiveChannelData::camera_words> words{};std::memcpy(words.data(),&camera,sizeof(camera));
         increment(&data_->camera_sequence);for(unsigned n=0;n<words.size();++n)store(&data_->camera[n],words[n]);increment(&data_->camera_sequence);
@@ -145,7 +147,7 @@ public:
         for(unsigned attempt=0;attempt<4;++attempt){
             auto before=read(&data_->camera_sequence);if(!before || (before&1))continue;
             std::array<std::uint32_t,LiveChannelData::camera_words> words{};for(unsigned n=0;n<words.size();++n)words[n]=read(&data_->camera[n]);
-            if(before==read(&data_->camera_sequence)){std::memcpy(&camera,words.data(),sizeof(camera));return true;}
+            if(before==read(&data_->camera_sequence)){std::memcpy(static_cast<void*>(&camera),words.data(),sizeof(camera));return true;}
         }
         return false;
     }

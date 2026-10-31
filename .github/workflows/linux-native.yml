@@ -14,7 +14,7 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y cmake ninja-build g++ libvulkan-dev glslang-tools mesa-vulkan-drivers vulkan-validationlayers libssl-dev libgl-dev
       - name: Fetch pinned build-only Vulkan headers and official X-Plane SDK
         run: |
-          curl --fail --location --retry 2 https://github.com/KhronosGroup/Vulkan-Headers/archive/b379292b2ab6df5771ba9870d53cf8b2c9295daf.tar.gz -o /tmp/vulkan-headers.tar.gz
+          curl --fail --location --retry 2 https://github.com/KhronosGroup/Vulkan-Headers/archive/d4a196d8c84e032d27f999adcea3075517c1c97f.tar.gz -o /tmp/vulkan-headers.tar.gz
           mkdir -p /tmp/aa-vulkan-headers
           tar -xzf /tmp/vulkan-headers.tar.gz -C /tmp/aa-vulkan-headers --strip-components=1
           curl --fail --location --retry 2 https://developer.x-plane.com/wp-content/plugins/code-sample-generation/sdk_zip_files/XPSDK430.zip -o /tmp/XPSDK430.zip
@@ -31,6 +31,18 @@ jobs:
           test -f "$VK_ICD_FILENAMES"
           export VK_LOADER_LAYERS_DISABLE='~implicit~'
           ctest --test-dir build-linux --output-on-failure
+      - name: Package Linux beta and verify installation and real loader isolation
+        run: |
+          export VK_ICD_FILENAMES="$(find /usr/share/vulkan/icd.d -name '*lvp*.json' -print -quit)"
+          python3 tools/package_linux.py build-linux dist-linux
+          python3 tools/test_linux_package.py dist-linux/Make-XP-AA-0.2.0-linux-beta.1-Linux-x86_64.tar.gz build-linux/native_aa_activation_probe
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: Native-AA-Linux-beta-package
+          path: |
+            dist-linux/*.tar.gz
+            dist-linux/SHA256SUMS.txt
+          if-no-files-found: error
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         if: always()
         with:

@@ -1,4 +1,4 @@
-# Native AA - in-sim controls (Windows alpha)
+# Native AA - in-sim controls (Windows alpha / Linux beta)
 
 Open **Plugins > Native AA > Open AA controls**. Enable or disable processing
 with the ON/OFF button. Changes apply live and save automatically to
@@ -75,5 +75,13 @@ Optional commands `native_aa/toggle` and `native_aa/open_panel` can be bound
 by the user in X-Plane. No bindings are installed automatically. The plugin
 does not control the camera, joystick, aircraft, resolution or UI scaling.
 
-This is a Windows alpha build, not a claim of Linux/Metal simulator support.
+Windows has initial live-flight validation. Native Linux is a beta with automated
+renderer/installer validation; Linux X-Plane flight testing remains open. No Metal renderer is delivered.
 Source, licenses and build instructions: https://github.com/cjboy31/make-xp-anti-aliasing-great-again
+
+## Motion, shimmer and combination update
+
+See [the new controls, operation and validation scope](MOTION-SHIMMER-COMBINATIONS.md).
+AA modes & combinations selects the processing chain. Motion & shimmer provides
+optional image refinement, stabilization and live vector/confidence diagnostics.
+All supported choices save and apply live; native MSAA remains configured in X-Plane.

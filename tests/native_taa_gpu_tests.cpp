@@ -109,6 +109,58 @@ int main(int argc,char** argv){
                 previous=std::move(result);previous_raw=source;previous_jitter=jitter;
             }
             need(temporal_error<spatial_error*.98,"Jittered TAA did not improve over fresh-only reconstruction");
+            // Known non-camera image displacement: camera prediction is zero,
+            // a smooth 2D signal moves by (+.7,-.4) pixels in the previous grid.
+            // Debug is a readback of the actual vector used, not a CPU counter.
+            data.size_jitter={float(size.width),float(size.height),0,0};data.previous_jitter={0,0,1,0};
+            data.feedback={.85f,1,.015f,0};data.options={1,0,1,0};
+            auto signal=[&](double dx,double dy){
+                auto pixels=flat;
+                for(unsigned y=0;y<size.height;++y)for(unsigned x=0;x<size.width;++x){
+                    const double value=.42+.16*std::sin((x+dx)*.55)+.14*std::cos((y+dy)*.48)+.08*std::sin((x+dx+y+dy)*.31);
+                    auto p=(std::size_t(y)*size.width+x)*4;for(unsigned n=0;n<3;++n)pixels[p+n]=taa_encode(value);
+                    pixels[p+3]=static_cast<unsigned char>((x+7*y)%256);
+                }
+                return pixels;
+            };
+            const auto stationary=signal(0,0),moving=signal(.7,-.4);
+            current.upload(staging,moving.data(),moving.size());raw.upload(staging,stationary.data(),stationary.size());history.upload(staging,stationary.data(),stationary.size());
+            const auto refined=render(false);alpha_equal(moving,refined);
+            unsigned matches=0,total=0;double motion_error=0;
+            for(unsigned y=8;y<size.height-8;++y)for(unsigned x=8;x<size.width-8;++x){
+                const auto p=(std::size_t(y)*size.width+x)*4;double dx=(refined[p]/255.-.5)*16,dy=(refined[p+1]/255.-.5)*16;
+                const double error=std::hypot(dx-.7,dy+.4);matches+=error<.3;motion_error+=error;++total;
+            }
+            std::cout<<"Local motion refinement: "<<matches<<"/"<<total<<" within .3 pixel; mean error "<<motion_error/total<<'\n';
+            need(matches>total*.35,"Local motion refinement did not recover known non-camera motion");
+            data.options[0]=0;const auto camera_only=render(false);
+            for(unsigned y=8;y<size.height-8;++y)for(unsigned x=8;x<size.width-8;++x){auto p=(std::size_t(y)*size.width+x)*4;
+                need(std::abs(int(camera_only[p])-128)<=1&&std::abs(int(camera_only[p+1])-128)<=1,"Camera-only estimate changed static motion");}
+            // Repeating three-phase undersampled coverage with an invariant
+            // local mean. A known mean-color history is the analytic reference.
+            auto alias=flat,old_alias=flat,mean_color=flat;
+            for(unsigned y=0;y<size.height;++y)for(unsigned x=0;x<size.width;++x){auto p=(std::size_t(y)*size.width+x)*4;
+                for(unsigned n=0;n<3;++n){alias[p+n]=taa_encode((x+y)%3==0?.75:.06);old_alias[p+n]=taa_encode((x+y)%3==1?.75:.06);mean_color[p+n]=taa_encode((.75+.06*2)/3);}}
+            current.upload(staging,alias.data(),alias.size());raw.upload(staging,old_alias.data(),old_alias.size());history.upload(staging,mean_color.data(),mean_color.size());
+            data.options={0,0,0,0};const auto baseline_shimmer=render(false);
+            data.options[1]=1;const auto stabilized=render(false);alpha_equal(alias,stabilized);
+            double baseline_deviation=0,stable_deviation=0;
+            for(unsigned y=3;y<size.height-3;++y)for(unsigned x=3;x<size.width-3;++x){const auto p=(std::size_t(y)*size.width+x)*4;
+                baseline_deviation+=std::pow(linear(baseline_shimmer[p])-linear(mean_color[p]),2);
+                stable_deviation+=std::pow(linear(stabilized[p])-linear(mean_color[p]),2);}
+            std::cout<<"Shimmer-pattern mean-reference error ratio: "<<stable_deviation/baseline_deviation<<'\n';
+            need(stable_deviation<baseline_deviation*.7,"Stabilization did not reduce undersampled coverage variation");
+            // A genuine whole-patch color change cannot be rescued as shimmer.
+            auto changed=moving;for(std::size_t p=0;p<changed.size();++p)if(p%4!=3)changed[p]=taa_encode(linear(moving[p])+.25);
+            current.upload(staging,changed.data(),changed.size());
+            std::vector<unsigned char> dark(flat.size(),0);for(std::size_t p=3;p<dark.size();p+=4)dark[p]=255;
+            raw.upload(staging,dark.data(),dark.size());history.upload(staging,dark.data(),dark.size());
+            const auto responsive=render(false);
+            for(std::size_t p=0;p<responsive.size();++p)need(std::abs(int(responsive[p])-int(changed[p]))<=1,"Shimmer control retained a changed surface");
+            data.options={1,1,0,0};std::fill(old_z.begin(),old_z.end(),.8f);old_depth.upload(staging,old_z.data(),count*4);
+            const auto occluded=render(false);
+            for(std::size_t p=0;p<occluded.size();++p)need(std::abs(int(occluded[p])-int(changed[p]))<=1,"New motion/shimmer mode ignored disocclusion");
+            data.options={};
             // Exercise actual sampled D32S8, including supported MSAA counts.
             for(auto samples:{VK_SAMPLE_COUNT_1_BIT,VK_SAMPLE_COUNT_2_BIT,VK_SAMPLE_COUNT_4_BIT,VK_SAMPLE_COUNT_8_BIT}){
                 VkImageFormatProperties properties{};

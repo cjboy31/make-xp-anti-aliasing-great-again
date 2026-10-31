@@ -1,4 +1,4 @@
-MAKE XP ANTI-ALIASING GREAT AGAIN - 0.2.0-alpha
+MAKE XP ANTI-ALIASING GREAT AGAIN - 0.3.0-alpha
 Windows x64 / X-Plane 12 / Vulkan
 
 WHAT IT DOES
@@ -86,3 +86,12 @@ Project / source / comparisons:
 https://github.com/cjboy31/make-xp-anti-aliasing-great-again
 Community Discord:
 https://discord.gg/yh396QNgHZ
+
+MOTION, SHIMMER AND COMBINED AA
+Select TAA + SMAA or TAA + FXAA for temporal AA followed by adjustable spatial
+finishing. The Motion & shimmer tab adds optional local image refinement,
+shimmer stabilization and vector/confidence diagnostics. Changes apply live and
+save automatically. Start with camera/depth motion and 50% stabilization. These
+are estimates, not native object/cloud vectors. Refinement costs GPU time and
+finishing can soften detail; use On/Off in the same view. Return diagnostics to
+Scene image for normal rendering. See docs/MOTION-SHIMMER-COMBINATIONS.md.

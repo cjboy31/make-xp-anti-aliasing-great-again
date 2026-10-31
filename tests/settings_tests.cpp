@@ -4,11 +4,14 @@
 using namespace native_aa;
 void require(bool b){if(!b)std::abort();}
 int main(){
-    for(unsigned method=0;method<3;++method)for(unsigned q=0;q<4;++q)for(unsigned strength:{0U,25U,100U})for(unsigned history:{0U,85U,95U}){
-        Settings s{false,Method(method),q,strength,0,history};require(parse_settings(serialize_settings(s))==s);
+    for(unsigned method=0;method<5;++method)for(unsigned q=0;q<4;++q)for(unsigned strength:{0U,25U,100U})for(unsigned history:{0U,85U,95U}){
+        Settings s{false,Method(method),q,strength,0,history};
+        s.motion_refinement=q%2;s.shimmer=strength;s.motion_debug=q%3;s.spatial_strength=100-strength;
+        require(parse_settings(serialize_settings(s))==s);
+        require(temporal_method(s.method)==(method>=2));require(combined_method(s.method)==(method>=3));
     }
     Settings defaults;
-    require(parse_settings("enabled=2\nmethod=3\nquality=4\nstrength=-1\nsubpixel=101\ntaa_history=96\n")==defaults);
+    require(parse_settings("enabled=2\nmethod=5\nquality=4\nstrength=-1\nsubpixel=101\ntaa_history=96\nmotion_refinement=2\nshimmer=101\nmotion_debug=3\nspatial_strength=101\n")==defaults);
     require(parse_settings("method=1garbage\nquality=99999999999999\n")==defaults);
     require(parse_settings(std::string(4097,'x'))==defaults);
     require(parse_settings("enabled=0\r\nquality=3\r\n").quality==3);

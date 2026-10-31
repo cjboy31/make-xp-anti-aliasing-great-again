@@ -64,4 +64,4 @@ by the user in X-Plane. No bindings are installed automatically. The plugin
 does not control the camera, joystick, aircraft, resolution or UI scaling.
 
 This is a Windows developer build, not a claim of Linux/Metal simulator support.
-Source, licenses and build instructions: https://github.com/cjboy31/xplane-native-aa
+Source, licenses and build instructions: https://github.com/cjboy31/make-xp-anti-aliasing-great-again

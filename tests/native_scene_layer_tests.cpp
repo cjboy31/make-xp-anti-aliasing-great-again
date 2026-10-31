@@ -147,7 +147,7 @@ int main(int argc,char** argv) {
     try {
         need(argc==2 || argc==3,"Usage: native_scene_layer_tests SHADERS [--expect-bypass]");
         bool bypass=argc==3 && std::string(argv[2])=="--expect-bypass";
-        std::filesystem::path shaders=argv[1];Context c(true,true,true);
+        std::filesystem::path shaders=argv[1];Context c(true,true,true,true);
         for(auto extent:{VkExtent2D{65,49},VkExtent2D{257,145},VkExtent2D{3840,2160}}){
             Image scene(c,extent,VK_FORMAT_R8G8B8A8_SRGB,4,true,false,false,c.async_family),hdr(c,extent,VK_FORMAT_R16G16B16A16_SFLOAT,8,true);
             if(extent.width>65){

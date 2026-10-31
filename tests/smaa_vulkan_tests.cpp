@@ -39,7 +39,7 @@ struct Context {
         else if (severity & VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT) ++self.warnings;
         std::cerr << "Vulkan validation: " << data->pMessage << '\n'; return VK_FALSE;
     }
-    explicit Context(bool validation,bool dynamic_rendering=false,bool asynchronous=false) {
+    explicit Context(bool validation,bool dynamic_rendering=false,bool asynchronous=false,bool multi_viewport=false) {
         try {
             const char* layer = "VK_LAYER_KHRONOS_validation";
             if (validation) {
@@ -95,6 +95,12 @@ struct Context {
             VkDeviceQueueCreateInfo queue_info{VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO};
             queue_info.queueFamilyIndex = family; queue_info.queueCount = 1; queue_info.pQueuePriorities = &priority;
             VkDeviceCreateInfo device_info{VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO};
+            VkPhysicalDeviceFeatures available{},enabled_features{};
+            if(multi_viewport){
+                vkGetPhysicalDeviceFeatures(physical,&available);
+                need(available.multiViewport,"Identical-pair viewport regression requires multiViewport");
+                enabled_features.multiViewport=VK_TRUE;device_info.pEnabledFeatures=&enabled_features;
+            }
             device_info.queueCreateInfoCount = 1; device_info.pQueueCreateInfos = &queue_info;
             std::array<VkDeviceQueueCreateInfo,2> queue_infos{queue_info,queue_info};
             if(asynchronous){

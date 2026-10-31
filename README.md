@@ -1,4 +1,4 @@
-# X-Plane Native AA
+# Make XP Anti-Aliasing Great Again
 
 Independent, native-resolution anti-aliasing research for X-Plane 12.
 The goal is a lightweight in-sim plugin for people who want smoother edges

@@ -10,6 +10,7 @@ struct TaaLayerScene {
         try{
             name(c,hdr.handle,"HDR");name(c,ldr.handle,"LDR");
             VkImageCreateInfo image{VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO};image.imageType=VK_IMAGE_TYPE_2D;image.format=VK_FORMAT_D32_SFLOAT_S8_UINT;
+            image.flags=VK_IMAGE_CREATE_MUTABLE_FORMAT_BIT; // Actual native depth contract; view format remains D32S8.
             image.extent={size.width,size.height,1};image.mipLevels=image.arrayLayers=1;image.samples=VK_SAMPLE_COUNT_1_BIT;image.tiling=VK_IMAGE_TILING_OPTIMAL;
             image.usage=VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT|VK_IMAGE_USAGE_SAMPLED_BIT;
             check(vkCreateImage(c.device,&image,nullptr,&depth),"TAA native depth");name(c,depth,"gbuf-depth");
@@ -72,7 +73,10 @@ struct TaaLayerScene {
         VkRenderingAttachmentInfo z{VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO};z.imageView=depth_view;z.imageLayout=depth_layout;z.loadOp=VK_ATTACHMENT_LOAD_OP_CLEAR;z.storeOp=VK_ATTACHMENT_STORE_OP_DONT_CARE;z.clearValue.depthStencil={0,0};
         VkRenderingInfo rendering{VK_STRUCTURE_TYPE_RENDERING_INFO};rendering.renderArea.extent=size;rendering.layerCount=1;rendering.colorAttachmentCount=1;rendering.pColorAttachments=&color;rendering.pDepthAttachment=&z;
         VkViewport vp{0,negative_y?float(size.height):0,float(size.width),negative_y?-float(size.height):float(size.height),0,1};const VkRect2D scissor{{0,0},size};
-        vkCmdBeginRendering(cb,&rendering);vkCmdBindPipeline(cb,VK_PIPELINE_BIND_POINT_GRAPHICS,geometry);vkCmdSetViewport(cb,0,1,&vp);vkCmdSetScissor(cb,0,1,&scissor);
+        // X-Plane's mono path submits an identical viewport pair. Exercise both
+        // pair and single forms, while preserving both untouched after capture.
+        const std::array<VkViewport,2> native_viewports{vp,vp};
+        vkCmdBeginRendering(cb,&rendering);vkCmdBindPipeline(cb,VK_PIPELINE_BIND_POINT_GRAPHICS,geometry);vkCmdSetViewport(cb,0,negative_y?2:1,native_viewports.data());vkCmdSetScissor(cb,0,1,&scissor);
         const std::array<float,2> dimensions{float(size.width),float(size.height)};vkCmdPushConstants(cb,geometry_layout,VK_SHADER_STAGE_FRAGMENT_BIT,0,8,dimensions.data());
         vkCmdDraw(cb,3,1,0,0);vkCmdEndRendering(cb);
         hdr.transition(cb,VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);before.transition(cb,VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL);

@@ -156,6 +156,8 @@ struct Commands {
     bool injected=false,depth_candidate=false,depth_incomplete=false,viewport_valid=false,viewport_count=false,jitter_applied=false;
     VkImage depth_image{};VkImageLayout depth_layout{};VkExtent2D depth_extent{};
     VkViewport viewport{};
+    std::array<VkViewport,2> viewports{};
+    unsigned viewport_size=0;
     SceneCamera camera{};
     std::array<float,2> jitter{};
     float y_sign=-1;
@@ -502,15 +504,23 @@ void apply_viewport(Device& d,VkCommandBuffer cb,Commands& s) {
     s.viewport_jittered=false;
     if(!s.viewport_valid)return;
     auto viewport=s.viewport;
+    auto viewports=s.viewports;
     const auto pipeline=d.pipelines.find(s.graphics);
     const bool geometry=pipeline!=d.pipelines.end() && pipeline->second.geometry;
     if(s.depth_candidate && geometry && pipeline->second.viewport_dynamic &&
        std::abs(viewport.width-float(s.depth_extent.width))<.01f && std::abs(std::abs(viewport.height)-float(s.depth_extent.height))<.01f &&
        std::abs(viewport.x)<.01f && (std::abs(viewport.y)<.01f || std::abs(viewport.y-float(s.depth_extent.height))<.01f)) {
         viewport.x+=s.jitter[0];viewport.y+=s.jitter[1];s.jitter_applied=true;s.viewport_jittered=true;s.y_sign=viewport.height<0?-1.f:1.f;
+        for(unsigned n=0;n<s.viewport_size;++n)viewports[n]=viewport;
     }
-    if(s.viewport_count && d.f.CmdSetViewportWithCount)d.f.CmdSetViewportWithCount(cb,1,&viewport);
-    else d.f.CmdSetViewport(cb,0,1,&viewport);
+    if(s.viewport_count && d.f.CmdSetViewportWithCount)d.f.CmdSetViewportWithCount(cb,s.viewport_size,viewports.data());
+    else d.f.CmdSetViewport(cb,0,s.viewport_size,viewports.data());
+}
+bool identical_viewports(unsigned count,const VkViewport* views) {
+    if(!count || count>2)return false;
+    if(count==1)return true;
+    const auto& a=views[0];const auto& b=views[1];
+    return a.x==b.x && a.y==b.y && a.width==b.width && a.height==b.height && a.minDepth==b.minDepth && a.maxDepth==b.maxDepth;
 }
 void begin_depth(Device& d,VkCommandBuffer cb,Commands& s,const VkRenderingInfo& info) {
     s.depth_candidate=false;s.depth_incomplete=false;s.depth_image=VK_NULL_HANDLE;s.geometry_draws=0;s.jitter_applied=false;
@@ -521,7 +531,7 @@ void begin_depth(Device& d,VkCommandBuffer cb,Commands& s,const VkRenderingInfo&
     const auto view=d.views.find(info.pDepthAttachment->imageView);if(view==d.views.end())return;
     const auto image=d.images.find(view->second.image);if(image==d.images.end() || image->second.name!="gbuf-depth")return;
     const auto& m=image->second.info;
-    if(m.flags || m.imageType!=VK_IMAGE_TYPE_2D || m.format!=VK_FORMAT_D32_SFLOAT_S8_UINT || m.arrayLayers!=1 || m.mipLevels!=1 ||
+    if((m.flags&~VK_IMAGE_CREATE_MUTABLE_FORMAT_BIT) || m.imageType!=VK_IMAGE_TYPE_2D || m.format!=VK_FORMAT_D32_SFLOAT_S8_UINT || m.arrayLayers!=1 || m.mipLevels!=1 ||
        !(m.usage&VK_IMAGE_USAGE_SAMPLED_BIT) || (m.samples!=VK_SAMPLE_COUNT_1_BIT && m.samples!=VK_SAMPLE_COUNT_2_BIT && m.samples!=VK_SAMPLE_COUNT_4_BIT && m.samples!=VK_SAMPLE_COUNT_8_BIT) ||
        m.extent.width!=info.renderArea.extent.width || m.extent.height!=info.renderArea.extent.height || m.extent.width>4096 || m.extent.height>4096)return;
     const auto depth_layout=info.pDepthAttachment->imageLayout;
@@ -552,7 +562,10 @@ void begin_depth(Device& d,VkCommandBuffer cb,Commands& s,const VkRenderingInfo&
 void finish_depth(Device& d,VkCommandBuffer cb,Commands& s) noexcept {
     if(!s.depth_candidate || !s.geometry_draws)return;
     try {
-        if(s.depth_incomplete || s.unsupported || !s.jitter_applied || !restorable_compute(d,s)){d.temporal_failed=true;d.failure_epoch=s.camera.epoch;d.reason("TAA geometry jitter/state not fully verified; SMAA fallback");return;}
+        if(s.depth_incomplete || s.unsupported || !s.jitter_applied || !restorable_compute(d,s)){
+            trace("TAA CAPTURE incomplete="+std::to_string(s.depth_incomplete)+" unsupported="+std::to_string(s.unsupported)+" jitter="+std::to_string(s.jitter_applied)+" restorable="+std::to_string(restorable_compute(d,s))+" draws="+std::to_string(s.geometry_draws));
+            d.temporal_failed=true;d.failure_epoch=s.camera.epoch;d.reason("TAA geometry jitter/state not fully verified; SMAA fallback");return;
+        }
         if(!d.depth_capture || d.depth_capture->native!=s.depth_image || d.depth_capture->family!=s.family)return;
         d.depth_capture->record(cb,s);s.injected=true;
         restore_compute(d,cb,s);
@@ -772,13 +785,19 @@ AA_EXPORT void VKAPI_CALL aaBindPipeline(VkCommandBuffer cb,VkPipelineBindPoint 
     s.geometry_pipeline=p!=d->pipelines.end() && p->second.geometry;s.geometry_dynamic=p!=d->pipelines.end() && p->second.viewport_dynamic;apply_viewport(*d,cb,s);}}
 AA_EXPORT void VKAPI_CALL aaViewport(VkCommandBuffer cb,unsigned first,unsigned count,const VkViewport* viewports){
     auto d=device(key(cb));std::lock_guard<std::recursive_mutex> lock(d->mutex);auto& s=command(*d,cb);
-    s.viewport_valid=first==0 && count==1;s.viewport_count=false;
-    if(s.viewport_valid){s.viewport=viewports[0];apply_viewport(*d,cb,s);}else{if(s.depth_candidate)s.depth_incomplete=true;d->f.CmdSetViewport(cb,first,count,viewports);}
+    s.viewport_valid=first==0 && identical_viewports(count,viewports);s.viewport_count=false;
+    if(s.viewport_valid){s.viewport=viewports[0];s.viewport_size=count;std::copy_n(viewports,count,s.viewports.begin());apply_viewport(*d,cb,s);}else{
+        if(s.depth_candidate && !s.depth_incomplete)trace("TAA VIEWPORT first="+std::to_string(first)+" count="+std::to_string(count));
+        if(s.depth_candidate)s.depth_incomplete=true;d->f.CmdSetViewport(cb,first,count,viewports);
+    }
 }
 AA_EXPORT void VKAPI_CALL aaViewportCount(VkCommandBuffer cb,unsigned count,const VkViewport* viewports){
     auto d=device(key(cb));std::lock_guard<std::recursive_mutex> lock(d->mutex);auto& s=command(*d,cb);
-    s.viewport_valid=count==1;s.viewport_count=true;
-    if(s.viewport_valid){s.viewport=viewports[0];apply_viewport(*d,cb,s);}else{if(s.depth_candidate)s.depth_incomplete=true;d->f.CmdSetViewportWithCount(cb,count,viewports);}
+    s.viewport_valid=identical_viewports(count,viewports);s.viewport_count=true;
+    if(s.viewport_valid){s.viewport=viewports[0];s.viewport_size=count;std::copy_n(viewports,count,s.viewports.begin());apply_viewport(*d,cb,s);}else{
+        if(s.depth_candidate && !s.depth_incomplete)trace("TAA VIEWPORT WITH COUNT count="+std::to_string(count));
+        if(s.depth_candidate)s.depth_incomplete=true;d->f.CmdSetViewportWithCount(cb,count,viewports);
+    }
 }
 AA_EXPORT void VKAPI_CALL aaBindSets(VkCommandBuffer cb,VkPipelineBindPoint bind,VkPipelineLayout layout,unsigned first,unsigned count,const VkDescriptorSet* sets,unsigned offsets,const unsigned* dynamic){auto d=device(key(cb));d->f.CmdBindDescriptorSets(cb,bind,layout,first,count,sets,offsets,dynamic);if(bind!=VK_PIPELINE_BIND_POINT_COMPUTE)return;
     std::lock_guard<std::recursive_mutex> l(d->mutex);auto& state=d->commands[cb].descriptors;auto p=d->layouts.find(layout);
@@ -816,7 +835,10 @@ AA_EXPORT void VKAPI_CALL aaEndRendering(VkCommandBuffer cb){auto d=device(key(c
 AA_EXPORT void VKAPI_CALL aaBeginRenderPass(VkCommandBuffer cb,const VkRenderPassBeginInfo* info,VkSubpassContents contents){auto d=device(key(cb));{std::lock_guard<std::recursive_mutex> l(d->mutex);++d->legacy_begins;}((PFN_vkCmdBeginRenderPass)d->gdpa(d->handle,"vkCmdBeginRenderPass"))(cb,info,contents);}
 void drawn(Device& d,VkCommandBuffer cb,bool direct){auto& s=command(d,cb);
     if(s.depth_candidate && s.geometry_pipeline){++s.geometry_draws;
-        if(!s.geometry_dynamic || !s.viewport_valid || !s.viewport_jittered)s.depth_incomplete=true;}
+        if(!s.geometry_dynamic || !s.viewport_valid || !s.viewport_jittered){
+            if(s.geometry_draws==1)trace("TAA JITTER incomplete dynamic="+std::to_string(s.geometry_dynamic)+" valid="+std::to_string(s.viewport_valid)+" jittered="+std::to_string(s.viewport_jittered)+" viewport="+std::to_string(s.viewport.x)+","+std::to_string(s.viewport.y)+","+std::to_string(s.viewport.width)+","+std::to_string(s.viewport.height)+" depth="+std::to_string(s.depth_extent.width)+"x"+std::to_string(s.depth_extent.height));
+            s.depth_incomplete=true;
+        }}
     if(!s.render_candidate)return;++s.render_draws;if(!direct || !s.graphics_target)s.render_unknown=true;}
 AA_EXPORT void VKAPI_CALL aaDraw(VkCommandBuffer cb,unsigned a,unsigned b,unsigned c,unsigned e){auto d=device(key(cb));drawn(*d,cb,true);d->f.CmdDraw(cb,a,b,c,e);}
 AA_EXPORT void VKAPI_CALL aaDrawIndexed(VkCommandBuffer cb,unsigned a,unsigned b,unsigned c,int e,unsigned f){auto d=device(key(cb));drawn(*d,cb,true);d->f.CmdDrawIndexed(cb,a,b,c,e,f);}

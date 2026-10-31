@@ -8,6 +8,7 @@
 #include "native_aa/push_constants.hpp"
 #include "native_aa/live_channel.hpp"
 #include "native_aa/platform.hpp"
+#include "native_aa/renderer_selection.hpp"
 #include "native_aa/native_taa_pipeline.hpp"
 #include <vulkan/vk_layer.h>
 #ifdef _WIN32
@@ -72,13 +73,9 @@ struct Config {
                 if(selected){
                     shaders=renderer/L"shaders";log=root/L"Output"/L"NativeAA"/(L"renderer-"+std::to_wstring(process_id())+L"-"+std::to_wstring(monotonic_ms())+L".log");
                     std::error_code ec;std::filesystem::create_directories(log.parent_path(),ec);
-                    if(!env(L"XPFSR24_AUTOMATIC").empty() || (!env(L"XPFSR24_RUNTIME").empty() && env(L"DISABLE_XPFSR24").empty()))
-                        startup_error="FSR renderer already selected; start using the Native AA shortcut";
-                    else{
-                        // Process-only handover. Never edit FSR settings or its
-                        // registry. Negotiation occurs before this layer's GIPA.
-                        SetEnvironmentVariableW(L"DISABLE_XPFSR24",L"1");enabled=true;
-                    }
+                    const bool legacy=!env(L"XPFSR24_AUTOMATIC").empty() || (!env(L"XPFSR24_RUNTIME").empty() && env(L"DISABLE_XPFSR24").empty());
+                    auto selection=xp_renderer::claim(root,xp_renderer::Choice::native_aa,false,legacy);
+                    enabled=selection.allowed;startup_error=selection.reason;
                 }
             }
         }
@@ -263,8 +260,12 @@ struct Surface {
     PrivateImage previous_depth;
     struct TemporalVariant {std::shared_ptr<DepthCapture> capture;std::unique_ptr<NativeTaaPipeline> pipeline;};
     std::vector<TemporalVariant> temporal_variants;
+    std::array<PrivateImage,3> combination;
+    std::array<std::unique_ptr<ComputeSmaaPipeline>,5> combination_pipelines;
+    Settings history_settings;
     SceneCamera history_camera;
     std::array<float,2> history_jitter{};
+    float history_y_sign=0;
     bool history_valid=false;
     DepthCapture* history_capture=nullptr;
     Surface(Device& device,VkImage image,VkExtent2D size,unsigned queue_family):d(device),native(image),extent(size),family(queue_family) {
@@ -327,6 +328,52 @@ struct Surface {
     void scratch(VkCommandBuffer cb,PrivateImage& image,VkImageLayout layout,VkPipelineStageFlags dst,VkAccessFlags access) {
         barrier(cb,image.image,VK_IMAGE_LAYOUT_UNDEFINED,layout,VK_PIPELINE_STAGE_ALL_COMMANDS_BIT,VK_ACCESS_MEMORY_READ_BIT|VK_ACCESS_MEMORY_WRITE_BIT,dst,access);
     }
+    void free_image(PrivateImage& image) noexcept {
+        if(image.srgb)d.f.DestroyImageView(d.handle,image.srgb,nullptr);
+        if(image.view)d.f.DestroyImageView(d.handle,image.view,nullptr);
+        if(image.image)d.f.DestroyImage(d.handle,image.image,nullptr);
+        if(image.memory){d.f.FreeMemory(d.handle,image.memory,nullptr);d.bytes-=image.bytes;}
+        image={};
+    }
+    void prepare_combination(unsigned variant){
+        if(!combination[0].image){
+            std::array<PrivateImage,3> fresh{};
+            try {for(auto& image:fresh)allocate(image,extent,VK_FORMAT_R8G8B8A8_UNORM,
+                VK_IMAGE_USAGE_SAMPLED_BIT|VK_IMAGE_USAGE_STORAGE_BIT|VK_IMAGE_USAGE_TRANSFER_SRC_BIT,true);}
+            catch(...) {for(auto& image:fresh)free_image(image);throw;}
+            combination=fresh;
+        }
+        // A failed new variant must not destroy resources held by earlier GPU
+        // recordings. Keep the bounded cache until Surface ownership retires.
+        if(!combination_pipelines[variant])combination_pipelines[variant]=std::make_unique<ComputeSmaaPipeline>(d.handle,extent,
+            ComputeSmaaViews{output.view,output.srgb,area.view,search.view,combination[0].view,combination[1].view,combination[2].view},config().shaders,controls,variant);
+    }
+    void record_combination(VkCommandBuffer cb,unsigned variant){
+        VkBufferMemoryBarrier constants{VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER};constants.buffer=controls;constants.size=16;
+        constants.srcQueueFamilyIndex=constants.dstQueueFamilyIndex=VK_QUEUE_FAMILY_IGNORED;
+        constants.srcAccessMask=VK_ACCESS_UNIFORM_READ_BIT;constants.dstAccessMask=VK_ACCESS_TRANSFER_WRITE_BIT;
+        d.f.CmdPipelineBarrier(cb,VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,VK_PIPELINE_STAGE_TRANSFER_BIT,0,0,nullptr,1,&constants,0,nullptr);
+        const std::array<float,4> values{d.settings.spatial_strength/100.f,d.settings.subpixel/100.f,0,0};
+        d.f.CmdUpdateBuffer(cb,controls,0,sizeof(values),values.data());
+        constants.srcAccessMask=VK_ACCESS_TRANSFER_WRITE_BIT;constants.dstAccessMask=VK_ACCESS_UNIFORM_READ_BIT;
+        d.f.CmdPipelineBarrier(cb,VK_PIPELINE_STAGE_TRANSFER_BIT,VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,0,0,nullptr,1,&constants,0,nullptr);
+        barrier(cb,output.image,VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+            VK_PIPELINE_STAGE_TRANSFER_BIT,VK_ACCESS_TRANSFER_READ_BIT,VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,VK_ACCESS_SHADER_READ_BIT);
+        for(auto* lookup:{&area,&search}) {
+            scratch(cb,*lookup,VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,VK_PIPELINE_STAGE_TRANSFER_BIT,VK_ACCESS_TRANSFER_WRITE_BIT);
+            VkBufferImageCopy region{};region.bufferOffset=lookup==&area?0:AREATEX_SIZE;region.imageSubresource={VK_IMAGE_ASPECT_COLOR_BIT,0,0,1};region.imageExtent={lookup->extent.width,lookup->extent.height,1};
+            d.f.CmdCopyBufferToImage(cb,staging,lookup->image,VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,1,&region);
+            barrier(cb,lookup->image,VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,VK_PIPELINE_STAGE_TRANSFER_BIT,VK_ACCESS_TRANSFER_WRITE_BIT,VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,VK_ACCESS_SHADER_READ_BIT);
+        }
+        for(unsigned pass=0;pass<3;++pass){
+            if(variant==4 && pass==1)continue;
+            scratch(cb,combination[pass],VK_IMAGE_LAYOUT_GENERAL,VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,VK_ACCESS_SHADER_WRITE_BIT);
+            combination_pipelines[variant]->record_pass(cb,pass);
+            barrier(cb,combination[pass].image,VK_IMAGE_LAYOUT_GENERAL,pass<2?VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL:VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+                VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,VK_ACCESS_SHADER_WRITE_BIT,pass<2?VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT:VK_PIPELINE_STAGE_TRANSFER_BIT,
+                pass<2?VK_ACCESS_SHADER_READ_BIT:VK_ACCESS_TRANSFER_READ_BIT);
+        }
+    }
     void prepare(unsigned variant){
         if(!pipelines[variant])pipelines[variant]=std::make_unique<ComputeSmaaPipeline>(d.handle,extent,
             ComputeSmaaViews{source.view,source.srgb,area.view,search.view,edges.view,weights.view,output.view},config().shaders,controls,variant);
@@ -379,6 +426,8 @@ struct Surface {
     bool record_temporal(VkCommandBuffer,const SceneCamera&,std::array<float,2>,float);
     void destroy() noexcept {
         Scope scope(d);for(auto& pipeline:pipelines)pipeline.reset();
+        for(auto& pipeline:combination_pipelines)pipeline.reset();
+        for(auto& image:combination)free_image(image);
         temporal_variants.clear();
         if(controls)d.f.DestroyBuffer(d.handle,controls,nullptr);
         if(controls_memory){d.f.FreeMemory(d.handle,controls_memory,nullptr);d.bytes-=controls_bytes;}
@@ -456,9 +505,13 @@ bool Surface::record_temporal(VkCommandBuffer cb,const SceneCamera& camera,std::
     Scope scope(d);auto capture=d.depth_capture;
     if(!capture)throw std::runtime_error("TAA depth snapshot unavailable");
     NativeTaaData data;
-    if(!native_taa_constants(data,camera,history_camera,extent,jitter,history_jitter,y_sign,d.settings.taa_history,d.settings.strength))
+    if(!native_taa_constants(data,camera,history_camera,extent,jitter,history_jitter,y_sign,d.settings.taa_history,d.settings.strength,
+        d.settings.motion_refinement,d.settings.shimmer,d.settings.motion_debug))
         throw std::runtime_error("TAA camera transform unavailable");
-    const bool reuse=history_valid && history_capture==capture.get() && camera_pair(camera,history_camera);
+    const bool reuse=history_valid && history_y_sign==y_sign && history_settings==d.settings && history_capture==capture.get() && camera_pair(camera,history_camera);
+    const bool combo=combined_method(d.settings.method) && !d.settings.motion_debug && d.settings.spatial_strength;
+    const unsigned spatial_variant=d.settings.method==Method::taa_fxaa?4:d.settings.quality;
+    if(combo)prepare_combination(spatial_variant);
     data.feedback[3]=reuse?0.f:1.f;
     if(!previous_depth.image){
         try{allocate(previous_depth,extent,VK_FORMAT_R32_SFLOAT,VK_IMAGE_USAGE_SAMPLED_BIT|VK_IMAGE_USAGE_TRANSFER_DST_BIT);}
@@ -493,20 +546,24 @@ bool Surface::record_temporal(VkCommandBuffer cb,const SceneCamera& camera,std::
     scratch(cb,output,VK_IMAGE_LAYOUT_GENERAL,VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,VK_ACCESS_SHADER_WRITE_BIT);
     variant->pipeline->record(cb,extent,!reuse);
     barrier(cb,output.image,VK_IMAGE_LAYOUT_GENERAL,VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,VK_ACCESS_SHADER_WRITE_BIT,VK_PIPELINE_STAGE_TRANSFER_BIT,VK_ACCESS_TRANSFER_READ_BIT);
-    barrier(cb,native,VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,VK_PIPELINE_STAGE_TRANSFER_BIT,VK_ACCESS_TRANSFER_READ_BIT,VK_PIPELINE_STAGE_TRANSFER_BIT,VK_ACCESS_TRANSFER_WRITE_BIT);
-    d.f.CmdCopyImage(cb,output.image,VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,native,VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,1,&copy);
-    barrier(cb,native,VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,VK_PIPELINE_STAGE_TRANSFER_BIT,VK_ACCESS_TRANSFER_WRITE_BIT,VK_PIPELINE_STAGE_ALL_COMMANDS_BIT,VK_ACCESS_MEMORY_READ_BIT|VK_ACCESS_MEMORY_WRITE_BIT);
     barrier(cb,source.image,VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,VK_ACCESS_SHADER_READ_BIT,VK_PIPELINE_STAGE_TRANSFER_BIT,VK_ACCESS_TRANSFER_READ_BIT);
     barrier(cb,capture->captured.image,VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,VK_ACCESS_SHADER_READ_BIT,VK_PIPELINE_STAGE_TRANSFER_BIT,VK_ACCESS_TRANSFER_READ_BIT);
     for(auto* history:{&edges,&weights,&previous_depth})
         barrier(cb,history->image,VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,VK_ACCESS_SHADER_READ_BIT,VK_PIPELINE_STAGE_TRANSFER_BIT,VK_ACCESS_TRANSFER_WRITE_BIT);
     d.f.CmdCopyImage(cb,source.image,VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,edges.image,VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,1,&copy);
-    d.f.CmdCopyImage(cb,output.image,VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,weights.image,VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,1,&copy);
+    d.f.CmdCopyImage(cb,d.settings.motion_debug?source.image:output.image,VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,weights.image,VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,1,&copy);
     d.f.CmdCopyImage(cb,capture->captured.image,VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,previous_depth.image,VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,1,&copy);
     for(auto* history:{&edges,&weights,&previous_depth})
         barrier(cb,history->image,VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,VK_PIPELINE_STAGE_TRANSFER_BIT,VK_ACCESS_TRANSFER_WRITE_BIT,VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,VK_ACCESS_SHADER_READ_BIT);
     barrier(cb,capture->captured.image,VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,VK_PIPELINE_STAGE_TRANSFER_BIT,VK_ACCESS_TRANSFER_READ_BIT,VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,VK_ACCESS_SHADER_READ_BIT);
-    history_valid=true;history_camera=camera;history_jitter=jitter;history_capture=capture.get();
+    // Store unfiltered temporal history first: post-AA must never recursively
+    // blur its own spatial output into history or overwrite raw/depth evidence.
+    if(combo)record_combination(cb,spatial_variant);
+    barrier(cb,native,VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,VK_PIPELINE_STAGE_TRANSFER_BIT,VK_ACCESS_TRANSFER_READ_BIT,VK_PIPELINE_STAGE_TRANSFER_BIT,VK_ACCESS_TRANSFER_WRITE_BIT);
+    d.f.CmdCopyImage(cb,combo?combination[2].image:output.image,VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,native,VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,1,&copy);
+    barrier(cb,native,VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,VK_PIPELINE_STAGE_TRANSFER_BIT,VK_ACCESS_TRANSFER_WRITE_BIT,VK_PIPELINE_STAGE_ALL_COMMANDS_BIT,VK_ACCESS_MEMORY_READ_BIT|VK_ACCESS_MEMORY_WRITE_BIT);
+    history_valid=true;history_settings=d.settings;
+    history_camera=camera;history_jitter=jitter;history_capture=capture.get();history_y_sign=y_sign;
     return reuse;
 }
 void restore_compute(Device& d,VkCommandBuffer cb,Commands& s) {
@@ -565,7 +622,7 @@ void begin_depth(Device& d,VkCommandBuffer cb,Commands& s,const VkRenderingInfo&
     s.depth_candidate=false;s.depth_incomplete=false;s.depth_image=VK_NULL_HANDLE;s.geometry_draws=0;s.jitter_applied=false;
     if(!d.enabled || !info.pDepthAttachment || !info.pDepthAttachment->imageView)return;
     if(ui_channel.controls(d.settings,d.control_sequence))d.live=d.settings.enabled;
-    if(!d.live || d.settings.method!=Method::taa || !d.settings.strength || !s.primary || !s.one_time || s.unsupported || !restorable_compute(d,s))return;
+    if(!d.live || !temporal_method(d.settings.method) || !d.settings.strength || !s.primary || !s.one_time || s.unsupported || !restorable_compute(d,s))return;
     if(info.flags || info.viewMask || info.layerCount!=1 || info.renderArea.offset.x || info.renderArea.offset.y)return;
     const auto view=d.views.find(info.pDepthAttachment->imageView);if(view==d.views.end())return;
     const auto image=d.images.find(view->second.image);if(image==d.images.end() || image->second.name!="gbuf-depth")return;
@@ -635,7 +692,7 @@ void finish_scene(Device& d,VkCommandBuffer cb,Commands& s) noexcept {
             d.reason("input is not native output size; set X-Plane input scale to Full");return;
         }
         auto native=d.native_extents.find(extent);
-        if(native==d.native_extents.end() || !native->second){d.reason("native scene extent not verified");return;}
+        if(native==d.native_extents.end() || !native->second){d.reason("Native scene extent not verified; set X-Plane input scale to Off / Full resolution");return;}
         if(d.failed.count(s.render_image)){d.reason("previous AA allocation failed for this scene image");return;}
         auto it=d.surfaces.find(s.render_image);
         if(it==d.surfaces.end()) {
@@ -645,7 +702,7 @@ void finish_scene(Device& d,VkCommandBuffer cb,Commands& s) noexcept {
         if(it->second->family!=s.family){d.reason("scene queue family changed");return;}
         bool temporal=false;
         std::string fallback;
-        if(d.settings.method==Method::taa) {
+        if(temporal_method(d.settings.method)) {
             SceneCamera camera;auto capture=d.depth_capture;
             const bool ready=!d.temporal_failed && s.one_time && capture && capture->camera.valid && capture->family==s.family && capture->captured.extent.width==s.extent.width && capture->captured.extent.height==s.extent.height &&
                 ui_channel.camera(camera) && camera.valid && std::uint32_t(tick_ms()-camera.tick)<=250 && camera.epoch==capture->camera.epoch && camera.frame==capture->camera.frame;
@@ -857,7 +914,7 @@ AA_EXPORT void VKAPI_CALL aaBindSets(VkCommandBuffer cb,VkPipelineBindPoint bind
     unsigned offset=0;for(unsigned i=0;i<count;++i){const auto n=first+i;BoundDescriptor b;b.set=(std::uint64_t)sets[i];b.layout=(std::uint64_t)layout;b.definition=p->second.definition;b.offset_count=p->second.dynamic[n];b.valid=true;
         if(offset+b.offset_count>offsets || b.offset_count>dynamic_offsets){state.supported=false;return;}for(unsigned j=0;j<b.offset_count;++j)b.offsets[j]=dynamic[offset+j];offset+=b.offset_count;state.bind(n,b);}if(offset!=offsets)state.supported=false;}
 AA_EXPORT void VKAPI_CALL aaBeginRendering(VkCommandBuffer cb,const VkRenderingInfo* info){auto d=device(key(cb));std::lock_guard<std::recursive_mutex> l(d->mutex);++d->dynamic_begins;auto& s=d->commands[cb];s.render_candidate=false;s.render_unknown=false;s.render_draws=0;s.render_image=VK_NULL_HANDLE;
-    if(d->settings.method==Method::taa && info->pDepthAttachment){
+    if(temporal_method(d->settings.method) && info->pDepthAttachment){
         const auto view=d->views.find(info->pDepthAttachment->imageView);
         if(view!=d->views.end()){
             const auto image=d->images.find(view->second.image);

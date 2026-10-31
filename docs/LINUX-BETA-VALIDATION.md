@@ -2,7 +2,9 @@
 
 This work ports the existing native AA scene adapter and XPLM controls to Linux;
 it is not a Windows binary, Wine wrapper or CPU-only diagnostic plugin.
-It does not add the separate planned motion/shimmer/combined-AA feature set.
+The 0.3.0 beta also builds the shared motion/shimmer/combined-AA feature set;
+see [its implementation and test scope](MOTION-SHIMMER-COMBINATIONS.md). Native
+Linux X-Plane flight validation remains open.
 
 The native Linux build uses C++17, external X-Plane SDK 4.3.0 and Vulkan headers,
 with explicit symbol exports for the Vulkan layer and five XPLM entry points.

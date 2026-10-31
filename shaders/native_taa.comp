@@ -5,7 +5,7 @@ layout(local_size_x=8,local_size_y=8) in;
 layout(constant_id=0) const bool forceReset=false;
 layout(set=0,binding=0,std140) uniform Params {
     mat4 reprojection,bodyReprojection,inverseProjection;
-    vec4 sizeJitter,previousJitter,feedback;
+    vec4 sizeJitter,previousJitter,feedback,options;
 } p;
 layout(set=0,binding=1) uniform sampler2D currentColor;
 layout(set=0,binding=2) uniform sampler2D historyColor;
@@ -21,6 +21,44 @@ vec3 encode(vec3 c) {
     c=clamp(c,0,1);
     return mix(1.055*pow(c,vec3(1.0/2.4))-.055,c*12.92,lessThanEqual(c,vec3(.0031308)));
 }
+float luma(vec3 c) { return dot(c,vec3(.25,.5,.25)); }
+bool inside(vec2 uv,vec2 size,float border) {
+    return all(greaterThanEqual(uv,vec2(border)/size))&&all(lessThanEqual(uv,1-vec2(border)/size));
+}
+// Original bounded Lucas-Kanade refinement around the depth/camera estimate.
+// A two-dimensional texture gradient, reduced patch error, reverse estimate
+// and previous-depth agreement are all required. This is an image estimate,
+// not native mesh/cloud velocity; ambiguous apertures retain the camera vector.
+vec2 refineMotion(vec2 currentUv,vec2 oldUv,vec2 size) {
+    if(!inside(currentUv,size,3)||!inside(oldUv,size,5))return vec2(0);
+    mat2 tensor=mat2(0);vec2 rhs=vec2(0);float before=0;
+    for(int y=-1;y<=1;++y)for(int x=-1;x<=1;++x) {
+        vec2 at=oldUv+vec2(x,y)/size;
+        float a=luma(textureLod(currentColor,currentUv+vec2(x,y)/size,0).rgb);
+        float b=luma(textureLod(previousRaw,at,0).rgb);
+        vec2 gradient=vec2(luma(textureLod(previousRaw,at+vec2(1,0)/size,0).rgb)-luma(textureLod(previousRaw,at-vec2(1,0)/size,0).rgb),
+                           luma(textureLod(previousRaw,at+vec2(0,1)/size,0).rgb)-luma(textureLod(previousRaw,at-vec2(0,1)/size,0).rgb))*.5;
+        tensor+=outerProduct(gradient,gradient);rhs+=gradient*(a-b);before+=(a-b)*(a-b);
+    }
+    float det=determinant(tensor),trace=tensor[0][0]+tensor[1][1];
+    if(!finite1(det)||det<1e-6||det<.025*trace*trace||before<.0001)return vec2(0);
+    vec2 delta=inverse(tensor)*rhs;
+    if(any(isnan(delta))||any(isinf(delta))||length(delta)>2)return vec2(0);
+    mat2 reverseTensor=mat2(0);vec2 reverseRhs=vec2(0);float after=0;
+    for(int y=-1;y<=1;++y)for(int x=-1;x<=1;++x) {
+        vec2 at=currentUv+vec2(x,y)/size;
+        float a=luma(textureLod(currentColor,at,0).rgb);
+        float b=luma(textureLod(previousRaw,oldUv+(vec2(x,y)+delta)/size,0).rgb);
+        vec2 gradient=vec2(luma(textureLod(currentColor,at+vec2(1,0)/size,0).rgb)-luma(textureLod(currentColor,at-vec2(1,0)/size,0).rgb),
+                           luma(textureLod(currentColor,at+vec2(0,1)/size,0).rgb)-luma(textureLod(currentColor,at-vec2(0,1)/size,0).rgb))*.5;
+        reverseTensor+=outerProduct(gradient,gradient);reverseRhs+=gradient*(b-a);after+=(a-b)*(a-b);
+    }
+    float reverseDet=determinant(reverseTensor);
+    if(!finite1(after)||after>=before*.8||reverseDet<1e-6)return vec2(0);
+    // Reverse residual measures the remaining displacement after refinement.
+    vec2 remaining=inverse(reverseTensor)*reverseRhs;
+    return any(isnan(remaining))||any(isinf(remaining))||length(remaining)>.5?vec2(0):delta;
+}
 void main() {
     ivec2 xy=ivec2(gl_GlobalInvocationID.xy),size=imageSize(outputColor);
     if(any(greaterThanEqual(xy,size)))return;
@@ -33,6 +71,7 @@ void main() {
     vec4 original=texelFetch(currentColor,xy,0);
     vec3 current=textureLod(currentColor,sampleUv,0).rgb;
     vec3 result=current;
+    vec2 motion=vec2(0);float acceptedWeight=0;bool motionValid=false;
     if(!forceReset&&p.feedback.w<.5&&geometry&&p.feedback.x>0) {
         vec4 clip=vec4(uv*2-1,depth,1);clip.y*=p.previousJitter.z;
         vec4 eye=p.inverseProjection*clip;
@@ -41,6 +80,10 @@ void main() {
         bool valid=finite1(old.w)&&old.w>1e-7&&!any(isnan(old))&&!any(isinf(old));
         vec2 oldUv=valid?old.xy/old.w:vec2(-1);oldUv.y*=p.previousJitter.z;oldUv=oldUv*.5+.5;
         vec2 oldRawUv=oldUv+p.previousJitter.xy/vec2(size);
+        if(valid&&p.options.x>.5&&inside(oldRawUv,vec2(size),5)) {
+            vec2 delta=refineMotion(sampleUv,oldRawUv,vec2(size));
+            oldUv+=delta/vec2(size);oldRawUv+=delta/vec2(size);
+        }
         float speed=length((oldUv-uv)*vec2(size));
         valid=valid&&speed<128&&all(greaterThanEqual(oldUv,.5/vec2(size)))&&all(lessThanEqual(oldUv,1-.5/vec2(size)))&&
             all(greaterThanEqual(oldRawUv,.5/vec2(size)))&&all(lessThanEqual(oldRawUv,1-.5/vec2(size)));
@@ -50,26 +93,49 @@ void main() {
             valid=finite1(oldDepth)&&oldDepth>1e-7&&finite1(predicted)&&predicted>0&&predicted<=1&&
                 abs(oldDepth-predicted)<=max(2e-6,p.feedback.z*max(oldDepth,predicted));
         }
+        motion=(oldUv-uv)*vec2(size);motionValid=valid;
         if(valid) {
-            vec3 low=vec3(1e10),high=vec3(-1e10),mean=vec3(0),square=vec3(0);
+            vec3 low=vec3(1e10),high=vec3(-1e10),mean=vec3(0),square=vec3(0),oldMean=vec3(0);
             for(int y=-1;y<=1;++y)for(int x=-1;x<=1;++x) {
                 vec3 color=yc(textureLod(currentColor,sampleUv+vec2(x,y)/vec2(size),0).rgb);
                 low=min(low,color);high=max(high,color);mean+=color/9;square+=color*color/9;
+                if(p.options.y>0)oldMean+=yc(textureLod(previousRaw,oldRawUv+vec2(x,y)/vec2(size),0).rgb)/9;
             }
             vec3 sigma=sqrt(max(vec3(0),square-mean*mean));
-            low=max(low,mean-1.5*sigma);high=min(high,mean+1.5*sigma);
+            float stabilization=clamp(p.options.y,0,1)*(1-smoothstep(1,4,speed));
+            float gamma=1.5+.5*stabilization;
+            low=max(low,mean-gamma*sigma);high=min(high,mean+gamma*sigma);
             vec3 oldRaw=textureLod(previousRaw,oldRawUv,0).rgb;
             vec3 oldColor=textureLod(historyColor,oldUv,0).rgb;
             float residual=max(max(abs(current.r-oldRaw.r),abs(current.g-oldRaw.g)),abs(current.b-oldRaw.b));
             // A residual is evidence against camera-only motion, not proof of
             // an object vector. Prefer a fresh sample for displays/reflections.
             float confidence=1-smoothstep(.01+min(.06,sigma.x*.2),.065+min(.4,sigma.x*.8),residual);
+            // Subpixel coverage can alternate while the local mean stays put.
+            // Rescue only high-frequency, slowly moving, depth-validated areas
+            // whose luminance AND chroma neighborhoods agree. Cuts, sky, fast
+            // motion and disocclusion never receive this stabilization.
+            if(stabilization>0&&finite3(oldMean)) {
+                vec3 difference=abs(mean-oldMean);
+                float neighborhood=max(difference.x,max(difference.y,difference.z));
+                float stableMean=1-smoothstep(.008,.035,neighborhood);
+                float detail=smoothstep(.025,.12,sigma.x);
+                confidence=max(confidence,stabilization*stableMean*detail*.92);
+            }
             float weight=clamp(p.feedback.x,0,.95)*confidence*mix(1,.55,clamp(speed/32,0,1));
             if(finite3(oldColor)&&finite3(oldRaw)&&finite3(low)&&finite3(high))
                 result=mix(current,rgb(clamp(yc(oldColor),low,high)),weight);
+            acceptedWeight=weight;
         }
     }
     if(!finite3(result))result=original.rgb;
+    if(p.options.z>.5) {
+        // Debug replaces only scene RGB. Alpha stays native; debug is never
+        // admitted as history by the caller. Black means rejected/unavailable.
+        vec3 debug=p.options.z<1.5?(motionValid?vec3(clamp(.5+motion/16,0,1),.25):vec3(0)):
+            vec3(1-acceptedWeight,acceptedWeight,0);
+        imageStore(outputColor,xy,vec4(debug,original.a));return;
+    }
     result=mix(original.rgb,result,clamp(p.feedback.y,0,1));
     imageStore(outputColor,xy,vec4(encode(result),original.a));
 }

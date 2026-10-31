@@ -1,4 +1,4 @@
-MAKE XP ANTI-ALIASING GREAT AGAIN - 0.2.0-alpha
+MAKE XP ANTI-ALIASING GREAT AGAIN - 0.3.0-alpha
 Windows x64 / X-Plane 12 / Vulkan
 
 WHAT IT DOES
@@ -7,6 +7,10 @@ Native-resolution scene anti-aliasing with live in-sim controls:
 - FXAA 3.11: adjustable blend and subpixel filtering.
 - Experimental TAA: jittered geometry, camera/depth reprojection, clipped
   history, adjustable history weight and live history reset.
+- TAA + SMAA and TAA + FXAA with adjustable spatial finishing strength.
+- Optional camera-seeded image-motion refinement, shimmer stabilization and
+  vector/history diagnostics. These estimates are not native object vectors.
+- Renderer selection keeps Native AA and FSR from processing the same session.
 - Live On/Off comparisons, automatically saved choices and current-session
   GPU completion status.
 This is independent of FSR. It does not upscale or generate frames.
@@ -34,8 +38,10 @@ SIMULATOR SETTINGS
   showcase used MSAA 2x. Higher MSAA can cost substantially more GPU time/VRAM.
 - Turn X-Plane FXAA Off when comparing these modes.
 - Do not run another FSR/DLSS/XeSS/NR/FG scene renderer in the same session.
-  Launching explicitly through the separate FSR app can prevent Native AA from
-  taking over. Native AA does not change that project's saved preferences.
+  With both our mods installed, open the Renderer tab, choose Native AA or
+  FSR / NR / frame generation, then close and restart X-Plane. The choice is
+  shared by updated versions of both mods; saved settings are retained.
+  See docs/RENDERER-SELECTION.md for older FSR builds and desktop launch behavior.
 
 CONTROLS
 Use the live On/Off control, select SMAA, FXAA or TAA, then adjust its controls.
@@ -86,3 +92,12 @@ Project / source / comparisons:
 https://github.com/cjboy31/make-xp-anti-aliasing-great-again
 Community Discord:
 https://discord.gg/yh396QNgHZ
+
+MOTION, SHIMMER AND COMBINED AA
+Select TAA + SMAA or TAA + FXAA for temporal AA followed by adjustable spatial
+finishing. The Motion & shimmer tab adds optional local image refinement,
+shimmer stabilization and vector/confidence diagnostics. Changes apply live and
+save automatically. Start with camera/depth motion and 50% stabilization. These
+are estimates, not native object/cloud vectors. Refinement costs GPU time and
+finishing can soften detail; use On/Off in the same view. Return diagnostics to
+Scene image for normal rendering. See docs/MOTION-SHIMMER-COMBINATIONS.md.

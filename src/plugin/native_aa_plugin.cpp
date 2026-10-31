@@ -18,6 +18,7 @@
 #include <XPLMDataAccess.h>
 #include "native_aa/live_channel.hpp"
 #include "native_aa/platform.hpp"
+#include "native_aa/renderer_selection.hpp"
 #include <GL/gl.h>
 #include <filesystem>
 #include <fstream>
@@ -35,6 +36,8 @@ XPLMMenuID menu{};
 int parent_item=-1;
 XPLMCommandRef toggle_command{},panel_command{};
 std::filesystem::path settings_file;
+xp_renderer::Choice renderer_choice=xp_renderer::Choice::automatic;
+std::string session_owner;
 std::string notice="Choose an AA method. All controls on this screen apply live.";
 unsigned requested_sequence=0;
 std::uint32_t changed_tick=0,completed_tick=0;
@@ -47,7 +50,8 @@ bool plugin_enabled=false;
 bool pending_disk=false;
 struct Rect {int l,t,r,b;bool contains(int x,int y)const{return x>=l && x<r && y<=t && y>b;}};
 struct Hit {Rect rect;int action;};
-std::array<Hit,24> hits{};
+std::array<Hit,40> hits{};
+unsigned panel_tab=0;
 unsigned hit_count=0;
 int slider=0;
 Rect slider_rect{};
@@ -97,10 +101,16 @@ void draw_content(XPLMWindowID id){
         settings.enabled && settings.strength && status.reason.empty() && status.applied_sequence==requested_sequence;
     const bool temporal_active=active && temporal_completed_tick && std::uint32_t(tick_ms()-temporal_completed_tick)<2500;
     std::string state;
-    if(!fresh)state="RENDERER UNAVAILABLE - settings saved; activate Native AA before starting X-Plane";
+    if(!fresh)state=session_owner=="fsr"?"FSR SESSION - Native AA is inactive; use Renderer to switch for next launch":
+        xp_renderer::environment("XP_RENDERER_SESSION_CHOICE")=="off"?"ORIGINAL SIMULATOR SESSION - both mod renderers are inactive":
+        "RENDERER UNAVAILABLE - settings saved; use Renderer to choose the next session";
     else if(!settings.enabled)state="OFF - original simulator image";
     else if(!settings.strength)state="OFF - blend strength is 0%";
-    else if(active && settings.method==Method::taa)state=temporal_active?"TAA ACTIVE - GPU-completed temporal frames confirmed":"TAA WAITING - no newly completed temporal frames confirmed";
+    else if(active && temporal_method(settings.method)) {
+        if(!temporal_active)state="TAA WAITING - no newly completed temporal frames confirmed";
+        else if(settings.motion_debug)state="MOTION DIAGNOSTIC ACTIVE - scene image is temporarily replaced";
+        else state=std::string(settings.method==Method::taa_smaa?"TAA + SMAA":settings.method==Method::taa_fxaa?"TAA + FXAA":"TAA")+" ACTIVE - GPU-completed frames confirmed";
+    }
     else if(active)state="AA ACTIVE - GPU-completed frames confirmed";
     else if(!status.reason.empty())state=status.reason.find("SMAA fallback")!=std::string::npos?"SMAA FALLBACK - TAA is not active; see the reason below":"BYPASSED - "+status.reason;
     else state="WAITING - no newly completed AA frames confirmed";
@@ -110,29 +120,62 @@ void draw_content(XPLMWindowID id){
     text(x+16,t-145,"ENABLE ANTI-ALIASING",white);
     text(x+16,t-170,"Switch off for a direct comparison. Camera and controller settings are untouched.",muted);
     button({right-125,t-133,right-16,t-177},settings.enabled?"ON":"OFF",1,settings.enabled);
-    text(x,t-220,"AA METHOD",muted);
-    const int third=(width-20)/3;
-    button({x,t-235,x+third,t-278},"SMAA 1x",10,settings.method==Method::smaa);
-    button({x+third+10,t-235,x+2*third+10,t-278},"FXAA 3.11",11,settings.method==Method::fxaa);
-    button({x+2*third+20,t-235,right,t-278},"TAA - experimental",12,settings.method==Method::taa);
-    text(x,t-301,settings.method==Method::taa?"Native TAA: jittered geometry, depth/camera reprojection and moving-pixel rejection.":settings.method==Method::smaa?"SMAA: searches edge shapes. Start here for aircraft outlines and fine geometry.":"FXAA: spatial edge filtering. Can soften fine textures; use the blend/subpixel sliders.",muted);
-    text(x,t-333,settings.method==Method::taa?"TEMPORAL HISTORY":"SMAA QUALITY",muted);
-    if(settings.method==Method::taa)button({x,t-348,right,t-391},"Reset temporal history - use after a visual discontinuity",50);
-    else{
-        const int quarter=(width-30)/4;const char* labels[]{"Low","Medium","High - recommended","Ultra"};
-        for(int i=0;i<4;++i)button({x+i*(quarter+10),t-348,x+i*(quarter+10)+quarter,t-391},labels[i],20+i,settings.quality==unsigned(i),settings.method==Method::smaa);
+    const int tab_width=(width-20)/3;
+    button({x,t-207,x+tab_width,t-241},"AA modes & combinations",60,panel_tab==0);
+    button({x+tab_width+10,t-207,x+tab_width*2+10,t-241},"Motion & shimmer",61,panel_tab==1);
+    button({x+tab_width*2+20,t-207,right,t-241},"Renderer",62,panel_tab==2);
+    const bool is_temporal=temporal_method(settings.method),is_combo=combined_method(settings.method);
+    if(panel_tab==0){
+        const int third=(width-20)/3,half=(width-10)/2;
+        button({x,t-260,x+third,t-301},"SMAA 1x",10,settings.method==Method::smaa);
+        button({x+third+10,t-260,x+2*third+10,t-301},"FXAA 3.11",11,settings.method==Method::fxaa);
+        button({x+2*third+20,t-260,right,t-301},"TAA - experimental",12,settings.method==Method::taa);
+        button({x,t-311,x+half,t-352},"TAA + SMAA",13,settings.method==Method::taa_smaa);
+        button({x+half+10,t-311,right,t-352},"TAA + FXAA",14,settings.method==Method::taa_fxaa);
+        text(x,t-377,is_combo?"Temporal accumulation first; spatial finishing second. Unfiltered TAA history preserves detail.":
+            is_temporal?"Native temporal AA. Tune stabilization, motion assistance and diagnostics on the next tab.":
+            "Spatial AA has no temporal history. X-Plane MSAA may be retained with any method.",muted);
+        const int quarter=(width-210)/4;const char* labels[]{"Low","Medium","High","Ultra"};
+        for(int i=0;i<4;++i)button({x+i*(quarter+5),t-397,x+i*(quarter+5)+quarter,t-436},labels[i],20+i,
+            settings.quality==unsigned(i),settings.method==Method::smaa||settings.method==Method::taa_smaa);
+        button({right-180,t-397,right,t-436},"Reset TAA history",50,false,is_temporal);
+        draw_slider({x,t-482,right,t-494},settings.strength,"AA BLEND - 0% retains the native image",30);
+        if(is_combo)draw_slider({x,t-545,right,t-557},settings.spatial_strength,"SPATIAL FINISH - start at 50%; more can soften detail",34);
+        else if(is_temporal)draw_slider({x,t-545,right,t-557},settings.taa_history,"HISTORY WEIGHT - lower responds faster",32,true,95);
+        else draw_slider({x,t-545,right,t-557},settings.subpixel,"FXAA SUBPIXEL FILTER - lower preserves more detail",31,settings.method==Method::fxaa);
+    }else if(panel_tab==1){
+        text(x,t-268,"ESTIMATED MOTION - camera/depth with optional local image refinement",muted);
+        button({x,t-283,x+width/2-5,t-325},"Camera + depth",70,settings.motion_refinement==0,is_temporal);
+        button({x+width/2+5,t-283,right,t-325},"Camera + image refinement",71,settings.motion_refinement==1,is_temporal);
+        text(x,t-348,"Image refinement costs more GPU time. Ambiguous matches retain the camera estimate.",muted);
+        text(x,t-371,"These are estimates, not native object/cloud vectors. Invalid history uses a fresh sample.",muted);
+        draw_slider({x,t-414,right,t-426},settings.shimmer,"SHIMMER STABILIZATION - slow fine detail; 0% uses baseline rejection",33,is_temporal);
+        if(is_temporal)draw_slider({x,t-476,right,t-488},settings.taa_history,"HISTORY WEIGHT - higher accumulates longer; may soften detail",32,true,95);
+        else draw_slider({x,t-476,right,t-488},settings.subpixel,"FXAA SUBPIXEL FILTER",31,settings.method==Method::fxaa);
+        const int third=(width-20)/3;
+        button({x,t-511,x+third,t-553},"Scene image",80,settings.motion_debug==0,is_temporal);
+        button({x+third+10,t-511,x+2*third+10,t-553},"Estimated vectors",81,settings.motion_debug==1,is_temporal);
+        button({x+2*third+20,t-511,right,t-553},"History confidence",82,settings.motion_debug==2,is_temporal);
+    }else{
+        text(x,t-272,"RENDERER FOR NEXT LAUNCH - one renderer per X-Plane session",cyan);
+        const int half=(width-10)/2;
+        button({x,t-293,x+half,t-339},"Native AA",90,renderer_choice==xp_renderer::Choice::native_aa);
+        button({x+half+10,t-293,right,t-339},"FSR / NR / frame generation",91,renderer_choice==xp_renderer::Choice::fsr);
+        button({x,t-353,x+half,t-399},"Original simulator - both Off",92,renderer_choice==xp_renderer::Choice::off);
+        button({x+half+10,t-353,right,t-399},"Automatic - Native AA if installed",93,renderer_choice==xp_renderer::Choice::automatic);
+        text(x,t-432,"Saved choice: "+std::string(xp_renderer::label(renderer_choice)),white);
+        text(x,t-459,"Close X-Plane normally, then reopen with your usual launcher. Your AA/FSR choices are retained.",muted);
+        text(x,t-486,"Native AA needs Full input scale. FSR requires its matching graphics settings and installed runtime.",muted);
+        text(x,t-513,"Both control panels may remain installed; only the selected renderer processes the scene.",muted);
+        text(x,t-540,"Update both mods for shared selection. An older active FSR session makes Native AA stay inactive.",muted);
     }
-    text(x,t-414,settings.method==Method::taa?"Camera motion is estimated; depth/color checks reject uncertain history. No native object vectors.":settings.method==Method::smaa?"Higher quality searches longer edges. Ultra costs more; it does not add temporal AA.":"FXAA uses quality preset 29. The SMAA selection is retained for your next switch.",muted);
-    draw_slider({x,t-463,right,t-475},settings.strength,"AA BLEND - lower preserves more of the original image",30);
-    if(settings.method==Method::taa)draw_slider({x,t-530,right,t-542},settings.taa_history,"HISTORY WEIGHT - lower responds faster; higher reduces shimmer",32,true,95);
-    else draw_slider({x,t-530,right,t-542},settings.subpixel,"FXAA SUBPIXEL FILTER - lower is sharper; higher is smoother",31,settings.method==Method::fxaa);
     button({x,t-570,x+190,t-612},"Restore defaults",40);
     button({right-145,t-570,right,t-612},"Close panel",41);
     const auto now=tick_ms();
     if(notice.rfind("Saved.",0)==0 && fresh && status.applied_sequence==requested_sequence && std::uint32_t(now-changed_tick)>200)
         notice=settings.enabled?"Saved and received by the renderer. See the current-session status above.":"Saved and applied: AA is off.";
     text(x,t-638,concise(notice),cyan);
-    const auto detail="GPU completed: "+std::to_string(settings.method==Method::taa?status.temporal_completed:status.completed)+"  |  Scratch: "+std::to_string(status.bytes/(1024*1024))+" MiB  |  "+std::to_string(status.width)+" x "+std::to_string(status.height);
+    const auto detail="GPU completed: "+std::to_string(temporal_method(settings.method)?status.temporal_completed:status.completed)+"  |  Scratch: "+std::to_string(status.bytes/(1024*1024))+" MiB  |  "+std::to_string(status.width)+" x "+std::to_string(status.height);
     text(x,t-662,detail,muted);
     text(x,t-684,"Settings save automatically. Set X-Plane to Full input scale; configure MSAA in X-Plane Graphics.",muted);
 }
@@ -140,7 +183,7 @@ void draw(XPLMWindowID id,void*){try{draw_content(id);}catch(...){XPLMDebugStrin
 void adjust(int x){
     const int maximum=slider==32?95:100;
     const unsigned value=unsigned(std::clamp((x-slider_rect.l)*maximum/std::max(1,slider_rect.r-slider_rect.l),0,maximum));
-    if(slider==30)settings.strength=value;else if(slider==31)settings.subpixel=value;else if(slider==32)settings.taa_history=value;persist(false);
+    if(slider==30)settings.strength=value;else if(slider==31)settings.subpixel=value;else if(slider==32)settings.taa_history=value;else if(slider==33)settings.shimmer=value;else if(slider==34)settings.spatial_strength=value;persist(false);
 }
 int mouse(XPLMWindowID,int x,int y,XPLMMouseStatus event,void*){
     try{
@@ -150,15 +193,24 @@ int mouse(XPLMWindowID,int x,int y,XPLMMouseStatus event,void*){
         for(unsigned i=0;i<hit_count;++i)if(hits[i].rect.contains(x,y)){
             const auto action=hits[i].action;
             if(action==41){slider=0;if(pending_disk)persist();XPLMSetWindowIsVisible(window,0);return 1;}
-            if(action==30 || action==31 || action==32){slider=action;slider_rect=hits[i].rect;adjust(x);return 1;}
+            if(action>=30 && action<=34){slider=action;slider_rect=hits[i].rect;adjust(x);return 1;}
+            if(action>=60 && action<=62){panel_tab=unsigned(action-60);if(panel_tab==2)renderer_choice=xp_renderer::read(settings_file.parent_path().parent_path().parent_path());return 1;}
+            if(action>=90 && action<=93){
+                const xp_renderer::Choice values[]{xp_renderer::Choice::native_aa,xp_renderer::Choice::fsr,xp_renderer::Choice::off,xp_renderer::Choice::automatic};
+                xp_renderer::save(settings_file.parent_path().parent_path().parent_path(),values[action-90]);renderer_choice=values[action-90];
+                notice="Saved: "+std::string(xp_renderer::label(renderer_choice))+". Restart X-Plane to switch; current renderer is unchanged.";return 1;
+            }
             if(action==1)settings.enabled=!settings.enabled;
-            else if(action>=10 && action<=12){settings.method=Method(action-10);temporal_completed_tick=0;last_temporal_completed=status.temporal_completed;}
+            else if(action==70 || action==71)settings.motion_refinement=unsigned(action-70);
+            else if(action>=80 && action<=82)settings.motion_debug=unsigned(action-80);
+            else if(action>=10 && action<=14){settings.method=Method(action-10);temporal_completed_tick=0;last_temporal_completed=status.temporal_completed;}
             else if(action>=20 && action<=23)settings.quality=unsigned(action-20);
             else if(action==40)settings=Settings{};
             else if(action==50){++camera_epoch;notice="Temporal history reset queued for the next scene frame.";return 1;}
             persist();return 1;
         }
-    }catch(...){notice="Could not apply the selection. Previous renderer state is retained.";}
+    }catch(const std::exception& e){notice=std::string("Selection not saved: ")+e.what();}
+    catch(...){notice="Could not apply the selection. Previous renderer state is retained.";}
     // Consume clicks on this panel's background as well as its controls, so
     // they cannot fall through into cockpit switches or mouse-look controls.
     return 1;
@@ -227,6 +279,8 @@ PLUGIN_API int XPluginStart(char* name,char* signature,char* description){
         std::strcpy(description,"Independent anti-aliasing controls and current-session renderer diagnostics");
         XPLMEnableFeature("XPLM_USE_NATIVE_PATHS",1);XPLMEnableFeature("XPLM_USE_NATIVE_WIDGET_WINDOWS",1);
         char root[4096]{};XPLMGetSystemPath(root);settings_file=std::filesystem::u8path(root)/"Output/preferences/NativeAA.ini";
+        session_owner=xp_renderer::environment("XP_RENDERER_OWNER");
+        try{renderer_choice=xp_renderer::read(std::filesystem::u8path(root));}catch(const std::exception& e){notice=e.what();}
         std::ifstream input(settings_file,std::ios::binary);std::string contents(4097,'\0');
         if(input){input.read(contents.data(),4097);contents.resize(std::size_t(input.gcount()));settings=parse_settings(contents);}
         channel.open();requested_sequence=channel.write_controls(settings);

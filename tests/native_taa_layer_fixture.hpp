@@ -126,6 +126,42 @@ void native_taa_layer_checks(Context& c,const std::filesystem::path& shaders){
         }
         native_aa::LiveStatus status;need(channel.status(status) && status.temporal_completed>=12 && status.temporal_reused>=8,"No fenced TAA history progression in layer");
     }
+    // Compare each injected combination with a separately recorded spatial
+    // pass over a reset TAA frame, at all qualities and blend endpoints.
+    {
+        const VkExtent2D size{97,65};TaaLayerScene scene(c,size,shaders);NativeProgram state(c,size,shaders);
+        Buffer staging(c,std::uint64_t(size.width)*size.height*4),controls(c,16,VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT);
+        native_aa::SceneCamera camera{};camera.epoch=901;camera.frame=1;camera.width=size.width;camera.height=size.height;
+        camera.valid=true;camera.reset=true;camera.view=1;camera.projection=camera.world=native_aa::identity_matrix();
+        for(unsigned variant=0;variant<5;++variant)for(unsigned blend:{0U,50U,100U}){
+            settings=native_aa::Settings{};settings.method=native_aa::Method::taa;camera.tick=native_aa::tick_ms();
+            channel.write_controls(settings);channel.write_camera(camera);
+            c.submit([&](auto cb){scene.record(cb,state,false);});state.verify();
+            const auto temporal=scene.ldr.read(staging);
+            const std::array<float,4> values{blend/100.f,settings.subpixel/100.f,0,0};
+            std::memcpy(controls.mapped,values.data(),16);controls.sync(true);
+            std::vector<unsigned char> expected=temporal;
+            if(blend){ComputeFixture reference(c,size,shaders,controls.handle,variant);expected=reference.render(temporal);}
+            settings.method=variant==4?native_aa::Method::taa_fxaa:native_aa::Method::taa_smaa;
+            settings.quality=variant==4?2:variant;settings.spatial_strength=blend;
+            channel.write_controls(settings);camera.tick=native_aa::tick_ms();channel.write_camera(camera);
+            c.submit([&](auto cb){scene.record(cb,state,false);});state.verify();
+            auto actual=scene.ldr.read(staging);alpha_equal(temporal,actual);
+            need(actual==expected,"Combined TAA/spatial output differs from independent two-stage reference");
+        }
+        // Reuse and switches must preserve state, alpha, bounded scratch and
+        // never accumulate diagnostic colors after returning to scene mode.
+        for(unsigned frame=0;frame<24;++frame){
+            settings.method=frame<12?native_aa::Method::taa_smaa:native_aa::Method::taa_fxaa;
+            settings.motion_refinement=frame>=4;settings.shimmer=frame>=8?100:0;
+            settings.motion_debug=frame>=16&&frame<20?1:frame>=20&&frame<22?2:0;
+            settings.enabled=frame!=23;channel.write_controls(settings);
+            camera.frame=frame+2;camera.reset=false;camera.tick=native_aa::tick_ms();channel.write_camera(camera);
+            c.submit([&](auto cb){scene.record(cb,state,frame%2);});state.verify();
+            const auto actual=scene.ldr.read(staging),before=scene.before.read(staging);alpha_equal(before,actual);
+            if(!settings.enabled)need(actual==before,"Combined Off changed native pixels");
+        }
+    }
     settings.enabled=false;channel.write_controls(settings);
-    std::cout<<"Native TAA layer: 32 temporal frames, history resets, +/- viewport Y, resize, alpha and compute descriptor/push-constant restoration passed\n";
+    std::cout<<"Native TAA layer: 32 baseline temporal frames, 15 exact two-stage combination references, 24 motion/shimmer/debug/switch cases; resets, +/- viewport Y, resize, alpha and compute descriptor/push-constant restoration passed\n";
 }

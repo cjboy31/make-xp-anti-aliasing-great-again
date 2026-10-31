@@ -77,6 +77,6 @@ if($previous -and [string]::Equals($previous.simulator,$root,[StringComparison]:
 }
 # Record only shipped files, never claim ownership of a user's additional files.
 $inventory=@($owned|ForEach-Object{[ordered]@{path=$_;sha256=(Get-FileHash -LiteralPath (Join-Path $destination $_) -Algorithm SHA256).Hash}})
-[IO.File]::WriteAllText((Join-Path $destination 'installation.json'),([ordered]@{product='NativeAA';version='0.2.0-alpha';simulator=$root;files=$inventory}|ConvertTo-Json -Depth 5),[Text.UTF8Encoding]::new($false))
-Write-Output ('Installed Native AA 0.2.0-alpha controls and checked AA renderer: '+$destination)
+[IO.File]::WriteAllText((Join-Path $destination 'installation.json'),([ordered]@{product='NativeAA';version='0.3.0-alpha';simulator=$root;files=$inventory}|ConvertTo-Json -Depth 5),[Text.UTF8Encoding]::new($false))
+Write-Output ('Installed Native AA 0.3.0-alpha controls and checked AA renderer: '+$destination)
 Write-Output 'Use Plugins > Native AA > Open AA controls. Set X-Plane input scale to Full. No FSR/controller/camera settings were changed.'

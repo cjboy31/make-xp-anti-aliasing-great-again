@@ -4,7 +4,11 @@
 #define XPLM210 1
 #define XPLM300 1
 #define XPLM301 1
+#ifdef _WIN32
 #define IBM 1
+#else
+#define LIN 1
+#endif
 #include <XPLMPlugin.h>
 #include <XPLMDisplay.h>
 #include <XPLMGraphics.h>
@@ -12,7 +16,8 @@
 #include <XPLMUtilities.h>
 #include <XPLMProcessing.h>
 #include <XPLMDataAccess.h>
-#include "native_aa/live_channel_win.hpp"
+#include "native_aa/live_channel.hpp"
+#include "native_aa/platform.hpp"
 #include <GL/gl.h>
 #include <filesystem>
 #include <fstream>
@@ -32,10 +37,10 @@ XPLMCommandRef toggle_command{},panel_command{};
 std::filesystem::path settings_file;
 std::string notice="Choose an AA method. All controls on this screen apply live.";
 unsigned requested_sequence=0;
-DWORD changed_tick=0,completed_tick=0;
+std::uint32_t changed_tick=0,completed_tick=0;
 std::uint64_t last_completed=0;
 std::uint64_t last_temporal_completed=0,camera_frame=0,camera_epoch=0;
-DWORD temporal_completed_tick=0;
+std::uint32_t temporal_completed_tick=0;
 SceneCamera previous_camera;
 XPLMDataRef projection_ref{},world_ref{},body_ref{},width_ref{},height_ref{},view_ref{},external_ref{};
 bool plugin_enabled=false;
@@ -59,16 +64,20 @@ void button(Rect r,const char* label,int action,bool selected=false,bool availab
 }
 void persist(bool disk=true){
     pending_disk=!disk;
-    requested_sequence=channel.write_controls(settings);changed_tick=GetTickCount();
+    requested_sequence=channel.write_controls(settings);changed_tick=tick_ms();
     notice=disk?"Saved. Waiting for the renderer to apply this selection.":"Adjusting live. Release the slider to save.";
     if(!requested_sequence)notice="Live connection unavailable. Your choices can still be saved for the next session.";
     if(!disk)return;
     try{
         std::filesystem::create_directories(settings_file.parent_path());
-        auto temporary=settings_file;temporary+=L".tmp-"+std::to_wstring(GetCurrentProcessId());
+        auto temporary=settings_file;temporary+=".tmp-"+std::to_string(process_id());
         {std::ofstream file(temporary,std::ios::binary|std::ios::trunc);const auto value=serialize_settings(settings);
             file.write(value.data(),std::streamsize(value.size()));file.flush();if(!file)throw std::runtime_error("Cannot write settings");}
+#ifdef _WIN32
         if(!MoveFileExW(temporary.c_str(),settings_file.c_str(),MOVEFILE_REPLACE_EXISTING|MOVEFILE_WRITE_THROUGH))throw std::runtime_error("Cannot replace settings");
+#else
+        std::filesystem::rename(temporary,settings_file);
+#endif
     }catch(...){notice=requested_sequence?"Change is live, but saving failed. Check write access to Output/preferences.":"Saving and live connection failed. Check access to Output/preferences.";}
 }
 void draw_slider(Rect r,unsigned value,const std::string& label,int action,bool active=true,unsigned maximum=100){
@@ -83,10 +92,10 @@ void draw_content(XPLMWindowID id){
     box({l,t,l+5,b},0.06f,0.65f,0.72f);
     const int x=l+30,right=r-30,width=right-x;
     text(x,t-33,"N A T I V E   A A",cyan);text(x+235,t-33,"INDEPENDENT ANTI-ALIASING",muted);
-    const bool fresh=status.renderer && DWORD(GetTickCount()-status.tick)<2500;
-    const bool active=fresh && completed_tick && DWORD(GetTickCount()-completed_tick)<2500 &&
+    const bool fresh=status.renderer && std::uint32_t(tick_ms()-status.tick)<2500;
+    const bool active=fresh && completed_tick && std::uint32_t(tick_ms()-completed_tick)<2500 &&
         settings.enabled && settings.strength && status.reason.empty() && status.applied_sequence==requested_sequence;
-    const bool temporal_active=active && temporal_completed_tick && DWORD(GetTickCount()-temporal_completed_tick)<2500;
+    const bool temporal_active=active && temporal_completed_tick && std::uint32_t(tick_ms()-temporal_completed_tick)<2500;
     std::string state;
     if(!fresh)state="RENDERER UNAVAILABLE - settings saved; activate Native AA before starting X-Plane";
     else if(!settings.enabled)state="OFF - original simulator image";
@@ -119,8 +128,8 @@ void draw_content(XPLMWindowID id){
     else draw_slider({x,t-530,right,t-542},settings.subpixel,"FXAA SUBPIXEL FILTER - lower is sharper; higher is smoother",31,settings.method==Method::fxaa);
     button({x,t-570,x+190,t-612},"Restore defaults",40);
     button({right-145,t-570,right,t-612},"Close panel",41);
-    const auto now=GetTickCount();
-    if(notice.rfind("Saved.",0)==0 && fresh && status.applied_sequence==requested_sequence && DWORD(now-changed_tick)>200)
+    const auto now=tick_ms();
+    if(notice.rfind("Saved.",0)==0 && fresh && status.applied_sequence==requested_sequence && std::uint32_t(now-changed_tick)>200)
         notice=settings.enabled?"Saved and received by the renderer. See the current-session status above.":"Saved and applied: AA is off.";
     text(x,t-638,concise(notice),cyan);
     const auto detail="GPU completed: "+std::to_string(settings.method==Method::taa?status.temporal_completed:status.completed)+"  |  Scratch: "+std::to_string(status.bytes/(1024*1024))+" MiB  |  "+std::to_string(status.width)+" x "+std::to_string(status.height);
@@ -185,7 +194,7 @@ void publish_camera(float elapsed){
         width_ref=XPLMFindDataRef("sim/graphics/view/window_width");height_ref=XPLMFindDataRef("sim/graphics/view/window_height");
         view_ref=XPLMFindDataRef("sim/graphics/view/view_type");external_ref=XPLMFindDataRef("sim/graphics/view/view_is_external");
     }
-    SceneCamera camera{};camera.frame=++camera_frame;camera.epoch=camera_epoch;camera.tick=GetTickCount();
+    SceneCamera camera{};camera.frame=++camera_frame;camera.epoch=camera_epoch;camera.tick=tick_ms();
     float projection[16]{},world[16]{},body[16]{};
     if(projection_ref && world_ref && XPLMGetDatavf(projection_ref,projection,0,16)==16 && XPLMGetDatavf(world_ref,world,0,16)==16 &&
         reversed_vulkan_projection(projection,camera.projection)){
@@ -205,10 +214,10 @@ void publish_camera(float elapsed){
     previous_camera=camera;channel.write_camera(camera);
 }
 float update(float elapsed,float,int,void*){
-    try{if(pending_disk && DWORD(GetTickCount()-changed_tick)>500)persist();
+    try{if(pending_disk && std::uint32_t(tick_ms()-changed_tick)>500)persist();
         publish_camera(elapsed);
-        LiveStatus copy;if(channel.status(copy)){status=copy;if(copy.completed!=last_completed){last_completed=copy.completed;completed_tick=GetTickCount();}
-            if(copy.temporal_completed!=last_temporal_completed){last_temporal_completed=copy.temporal_completed;temporal_completed_tick=GetTickCount();}}}catch(...){}
+        LiveStatus copy;if(channel.status(copy)){status=copy;if(copy.completed!=last_completed){last_completed=copy.completed;completed_tick=tick_ms();}
+            if(copy.temporal_completed!=last_temporal_completed){last_temporal_completed=copy.temporal_completed;temporal_completed_tick=tick_ms();}}}catch(...){}
     return -1;
 }
 }
@@ -231,7 +240,7 @@ PLUGIN_API int XPluginStart(char* name,char* signature,char* description){
         return 1;
     }catch(...){XPLMDebugString("Native AA: setup failed; plugin not enabled.\n");return 0;}
 }
-PLUGIN_API int XPluginEnable(){if(!plugin_enabled){plugin_enabled=true;camera_epoch=GetTickCount64();previous_camera={};requested_sequence=channel.write_controls(settings);XPLMRegisterFlightLoopCallback(update,-1,nullptr);}return 1;}
+PLUGIN_API int XPluginEnable(){if(!plugin_enabled){plugin_enabled=true;camera_epoch=monotonic_ms();previous_camera={};requested_sequence=channel.write_controls(settings);XPLMRegisterFlightLoopCallback(update,-1,nullptr);}return 1;}
 PLUGIN_API void XPluginDisable(){
     slider=0;if(pending_disk)persist();
     if(window)XPLMSetWindowIsVisible(window,0);

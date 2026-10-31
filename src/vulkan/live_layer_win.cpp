@@ -5,16 +5,24 @@
 #include "live_dispatch.hpp"
 #include "native_aa/compute_smaa_pipeline.hpp"
 #include "native_aa/descriptor_state.hpp"
-#include "native_aa/live_channel_win.hpp"
+#include "native_aa/push_constants.hpp"
+#include "native_aa/live_channel.hpp"
+#include "native_aa/platform.hpp"
 #include "native_aa/native_taa_pipeline.hpp"
 #include <vulkan/vk_layer.h>
+#ifdef _WIN32
 #include <windows.h>
 #include <bcrypt.h>
+#else
+#include <dlfcn.h>
+#include <openssl/evp.h>
+#endif
 #include "Textures/AreaTex.h"
 #include "Textures/SearchTex.h"
 #include <algorithm>
 #include <atomic>
 #include <cstring>
+#include <cstdlib>
 #include <cstdio>
 #include <filesystem>
 #include <fstream>
@@ -32,6 +40,7 @@
 namespace native_aa {thread_local LiveDispatch* live_dispatch=nullptr;}
 namespace {
 using namespace native_aa;
+#ifdef _WIN32
 std::wstring env(const wchar_t* key) {
     const auto n=GetEnvironmentVariableW(key,nullptr,0); if(!n || n>32768) return {};
     std::wstring value(n,L'\0'); GetEnvironmentVariableW(key,value.data(),n); value.resize(n-1); return value;
@@ -61,7 +70,7 @@ struct Config {
                 selected=renderer.filename()==L"renderer" && plugin.filename()==L"NativeAA" && plugins.filename()==L"plugins" && resources.filename()==L"Resources" &&
                     marker=="NativeAAStandalone=1" && _wcsicmp(exe,installed_exe.c_str())==0;
                 if(selected){
-                    shaders=renderer/L"shaders";log=root/L"Output"/L"NativeAA"/(L"renderer-"+std::to_wstring(GetCurrentProcessId())+L"-"+std::to_wstring(GetTickCount64())+L".log");
+                    shaders=renderer/L"shaders";log=root/L"Output"/L"NativeAA"/(L"renderer-"+std::to_wstring(process_id())+L"-"+std::to_wstring(monotonic_ms())+L".log");
                     std::error_code ec;std::filesystem::create_directories(log.parent_path(),ec);
                     if(!env(L"XPFSR24_AUTOMATIC").empty() || (!env(L"XPFSR24_RUNTIME").empty() && env(L"DISABLE_XPFSR24").empty()))
                         startup_error="FSR renderer already selected; start using the Native AA shortcut";
@@ -81,9 +90,13 @@ struct Config {
         if(shaders.empty() || log.empty()) enabled=false;
     }
 };
+#else
+#include "live_config_linux.hpp"
+#endif
 Config& config(){static Config c;return c;}
 LiveChannel ui_channel;
 std::mutex ui_status_mutex;
+#ifdef _WIN32
 HANDLE exception_file=INVALID_HANDLE_VALUE;
 PVOID exception_handler=nullptr;
 std::atomic<unsigned> exception_count{0};
@@ -95,7 +108,7 @@ LONG CALLBACK observe_exception(EXCEPTION_POINTERS* fault) noexcept {
     auto address=fault->ExceptionRecord->ExceptionAddress;VirtualQuery(address,&memory,sizeof(memory));
     if(memory.Type==MEM_IMAGE)GetModuleFileNameA((HMODULE)memory.AllocationBase,module,MAX_PATH);
     int n=std::snprintf(text,sizeof(text),"tick=%llu thread=%lu code=0x%08lx address=%p module=%s base=%p offset=0x%llx\r\n",
-        (unsigned long long)GetTickCount64(),GetCurrentThreadId(),code,address,module,memory.AllocationBase,
+        (unsigned long long)monotonic_ms(),GetCurrentThreadId(),code,address,module,memory.AllocationBase,
         (unsigned long long)((std::uintptr_t)address-(std::uintptr_t)memory.AllocationBase));
     if(n>0)used=unsigned(std::min<std::size_t>(std::size_t(n),sizeof(text)-1));
     void* frames[32]{};auto count=CaptureStackBackTrace(0,32,frames,nullptr);
@@ -113,19 +126,25 @@ void begin_exception_diagnostics(){
     if(exception_file!=INVALID_HANDLE_VALUE)exception_handler=AddVectoredExceptionHandler(1,observe_exception);
 }
 void end_exception_diagnostics(){if(exception_handler){RemoveVectoredExceptionHandler(exception_handler);exception_handler=nullptr;}if(exception_file!=INVALID_HANDLE_VALUE){CloseHandle(exception_file);exception_file=INVALID_HANDLE_VALUE;}}
+#else
+// Do not replace simulator/plugin signal handlers on Linux.
+void begin_exception_diagnostics(){}
+void end_exception_diagnostics(){}
+#endif
 std::mutex log_mutex;
 void trace(const std::string& message) noexcept {
     try {
         if(!config().selected || config().log.empty()) return;
         std::lock_guard<std::mutex> lock(log_mutex);
         std::ofstream log(config().log,std::ios::app);
-        log << GetTickCount64() << " pid=" << GetCurrentProcessId() << ' ' << message << '\n';
+        log << monotonic_ms() << " pid=" << process_id() << ' ' << message << '\n';
     }catch(...){}
 }
 void require(VkResult result,const char* action) {
     if(result!=VK_SUCCESS) throw std::runtime_error(std::string(action)+": "+std::to_string(result));
 }
 std::string digest(const void* bytes,std::size_t count) {
+#ifdef _WIN32
     BCRYPT_ALG_HANDLE algorithm{}; BCRYPT_HASH_HANDLE hash{}; std::array<unsigned char,32> result{};
     if(BCryptOpenAlgorithmProvider(&algorithm,BCRYPT_SHA256_ALGORITHM,nullptr,0)<0) return {};
     bool ok=BCryptCreateHash(algorithm,&hash,nullptr,0,nullptr,0,0)>=0;
@@ -133,6 +152,11 @@ std::string digest(const void* bytes,std::size_t count) {
     if(hash) BCryptDestroyHash(hash); BCryptCloseAlgorithmProvider(algorithm,0);
     if(!ok) return {};
     std::ostringstream out; for(auto b:result) out<<std::hex<<std::setfill('0')<<std::setw(2)<<unsigned(b); return out.str();
+#else
+    std::array<unsigned char,32> result{};unsigned length=0;
+    if(EVP_Digest(bytes,count,result.data(),&length,EVP_sha256(),nullptr)!=1 || length!=result.size())return {};
+    std::ostringstream out;for(auto b:result)out<<std::hex<<std::setfill('0')<<std::setw(2)<<unsigned(b);return out.str();
+#endif
 }
 template<class T> void* key(T handle){return handle?*reinterpret_cast<void**>(handle):nullptr;}
 struct Instance {VkInstance handle{}; PFN_vkGetInstanceProcAddr gipa{}; PFN_GetPhysicalDeviceProcAddr phys{};};
@@ -144,10 +168,11 @@ struct ViewMeta {VkImage image{};VkFormat format{};bool full=false;};
 struct PipelineMeta {bool target=false,geometry=false,viewport_dynamic=false,viewport_count=false;};
 struct SetMeta {std::uint64_t canonical{};unsigned dynamic{};bool valid=false;};
 struct SamplerMeta {std::uint64_t canonical{};bool valid=false;};
-struct LayoutMeta {DescriptorLayout definition;std::array<unsigned,descriptor_sets> dynamic{};};
+struct LayoutMeta {DescriptorLayout definition;std::array<unsigned,descriptor_sets> dynamic{};VkPushConstantRange compute_push{};};
 struct Commands {
     VkCommandPool pool{};unsigned family{};bool primary=false,unsupported=false;
     VkPipeline compute{},graphics{};DescriptorState descriptors;
+    ComputePushShadow push_constants;VkPipelineLayout push_layout{};
     std::uint64_t compute_epoch=0;
     VkImage render_image{};VkImageLayout render_layout{};VkExtent2D extent{};
     bool render_candidate=false,render_unknown=false,graphics_target=false;unsigned render_draws=0;
@@ -196,7 +221,7 @@ struct Device {
     std::uint64_t failure_epoch=0;
     std::unordered_set<std::uint64_t> observed_depth_contracts;
     bool enabled=false,live=true;std::string last_reason;
-    Settings settings;unsigned control_sequence=0,width=0,height=0;DWORD last_status=0;
+    Settings settings;unsigned control_sequence=0,width=0,height=0;std::uint32_t last_status=0;
     std::uint64_t intern(const std::vector<std::uint64_t>& value) {
         auto [it,added]=canonical.emplace(value,canonical.size()+1);(void)added;return it->second;
     }
@@ -272,7 +297,8 @@ struct Surface {
         }catch(...){destroy();throw;}
     }
     void reserve(VkDeviceSize amount){
-        if(config().test && env(L"NATIVE_AA_TEST_FAIL_ALLOC")==L"1")throw std::runtime_error("test allocation refusal");
+        const auto refusal=std::getenv("NATIVE_AA_TEST_FAIL_ALLOC");
+        if(config().test && refusal && std::strcmp(refusal,"1")==0)throw std::runtime_error("test allocation refusal");
         if(amount>memory_limit || d.bytes>memory_limit-amount) throw std::runtime_error("384 MiB AA scratch limit");
     }
     void allocate(PrivateImage& image,VkExtent2D size,VkFormat format,VkImageUsageFlags usage,bool srgb=false) {
@@ -490,9 +516,22 @@ void restore_compute(Device& d,VkCommandBuffer cb,Commands& s) {
         const auto set=reinterpret_cast<VkDescriptorSet>(binding.set);
         d.f.CmdBindDescriptorSets(cb,VK_PIPELINE_BIND_POINT_COMPUTE,reinterpret_cast<VkPipelineLayout>(binding.layout),n,1,&set,binding.offset_count,binding.offsets.data());
     }
+    if(s.push_constants.has_data()){
+        const auto layout=d.layouts.find(s.push_layout);
+        if(layout!=d.layouts.end()){
+            const auto& range=layout->second.compute_push;
+            d.f.CmdPushConstants(cb,s.push_layout,VK_SHADER_STAGE_COMPUTE_BIT,range.offset,range.size,s.push_constants.data(range.offset));
+        }
+    }
 }
 bool restorable_compute(Device& d,const Commands& s){
     if(!s.descriptors.supported)return false;
+    if(!s.push_constants.supported())return false;
+    if(s.push_constants.has_data()){
+        const auto layout=d.layouts.find(s.push_layout);
+        if(layout==d.layouts.end() || !d.f.CmdPushConstants || !layout->second.definition.valid || layout->second.compute_push.stageFlags!=VK_SHADER_STAGE_COMPUTE_BIT ||
+            !s.push_constants.covers(layout->second.definition.push_signature,layout->second.compute_push.offset,layout->second.compute_push.size))return false;
+    }
     if(s.compute){const auto epoch=d.pipeline_epochs.find(s.compute);if(epoch==d.pipeline_epochs.end() || epoch->second!=s.compute_epoch)return false;}
     for(const auto& binding:s.descriptors.bound)if(binding.valid){
         const auto layout=d.layouts.find(reinterpret_cast<VkPipelineLayout>(binding.layout));
@@ -546,7 +585,7 @@ void begin_depth(Device& d,VkCommandBuffer cb,Commands& s,const VkRenderingInfo&
     const auto extent=(std::uint64_t(m.extent.width)<<32)|m.extent.height;
     if(!config().test && std::none_of(d.outputs.begin(),d.outputs.end(),[extent](const auto& entry){return entry.second==extent;}))return;
     SceneCamera camera;
-    if(!ui_channel.camera(camera) || !camera.valid || DWORD(GetTickCount()-camera.tick)>250 || !camera.width || !camera.height ||
+    if(!ui_channel.camera(camera) || !camera.valid || std::uint32_t(tick_ms()-camera.tick)>250 || !camera.width || !camera.height ||
        std::abs(double(camera.width)/camera.height-double(m.extent.width)/m.extent.height)>.002)return;
     if(d.temporal_failed && camera.epoch==d.failure_epoch)return;
     if(camera.epoch!=d.failure_epoch)d.temporal_failed=false;
@@ -574,7 +613,7 @@ void finish_depth(Device& d,VkCommandBuffer cb,Commands& s) noexcept {
 void finish_scene(Device& d,VkCommandBuffer cb,Commands& s) noexcept {
     if(!d.enabled || !s.render_candidate) return;
     try {
-        const auto now=GetTickCount64();
+        const auto now=monotonic_ms();
         if(ui_channel.controls(d.settings,d.control_sequence))d.live=d.settings.enabled;
         else if(config().test || now-d.last_poll>500){d.last_poll=now;if(!config().control.empty()){std::ifstream control(config().control);std::string value;control>>value;d.live=value=="ON";}}
         if(!d.live){d.reason("live control OFF");return;}
@@ -582,7 +621,8 @@ void finish_scene(Device& d,VkCommandBuffer cb,Commands& s) noexcept {
         if(!s.primary){d.reason("scene recorded inside unsupported secondary buffer");return;}
         if(s.unsupported){d.reason("unverified command-state extension or secondary execution");return;}
         if(!s.descriptors.supported){d.reason("unsupported compute descriptor layout/state");return;}
-        if(!restorable_compute(d,s)){d.reason("compute pipeline/layout retired or changed");return;}
+        if(!s.push_constants.supported()){d.reason("unsupported compute push-constant updates; native scene retained");return;}
+        if(!restorable_compute(d,s)){d.reason("native compute state cannot be restored safely");return;}
         if(s.render_unknown){d.reason("unrecognized shader/draw in LDR scene");return;}
         if(s.render_draws!=1){d.reason("LDR draw count="+std::to_string(s.render_draws));return;}
         for(const auto& b:s.descriptors.bound)if(b.valid){
@@ -608,7 +648,7 @@ void finish_scene(Device& d,VkCommandBuffer cb,Commands& s) noexcept {
         if(d.settings.method==Method::taa) {
             SceneCamera camera;auto capture=d.depth_capture;
             const bool ready=!d.temporal_failed && s.one_time && capture && capture->camera.valid && capture->family==s.family && capture->captured.extent.width==s.extent.width && capture->captured.extent.height==s.extent.height &&
-                ui_channel.camera(camera) && camera.valid && DWORD(GetTickCount()-camera.tick)<=250 && camera.epoch==capture->camera.epoch && camera.frame==capture->camera.frame;
+                ui_channel.camera(camera) && camera.valid && std::uint32_t(tick_ms()-camera.tick)<=250 && camera.epoch==capture->camera.epoch && camera.frame==capture->camera.frame;
             if(ready) {
                 try{
                     const bool reuse=it->second->record_temporal(cb,capture->camera,capture->jitter,capture->y_sign);
@@ -619,12 +659,7 @@ void finish_scene(Device& d,VkCommandBuffer cb,Commands& s) noexcept {
         if(!temporal)it->second->record(cb);
         s.injected=true;
         d.width=s.extent.width;d.height=s.extent.height;
-        if(s.compute)d.f.CmdBindPipeline(cb,VK_PIPELINE_BIND_POINT_COMPUTE,s.compute);
-        for(unsigned n=0;n<descriptor_sets;++n) {
-            const auto& binding=s.descriptors.bound[n];if(!binding.valid)continue;
-            const auto set=reinterpret_cast<VkDescriptorSet>(binding.set);
-            d.f.CmdBindDescriptorSets(cb,VK_PIPELINE_BIND_POINT_COMPUTE,reinterpret_cast<VkPipelineLayout>(binding.layout),n,1,&set,binding.offset_count,binding.offsets.data());
-        }
+        restore_compute(d,cb,s);
         ++s.aa_recorded;++d.recorded;
         if(d.recorded==1)trace("RECORDED native AA; completion not yet confirmed");
         if(fallback.empty())d.last_reason.clear();else d.reason(fallback);
@@ -632,7 +667,11 @@ void finish_scene(Device& d,VkCommandBuffer cb,Commands& s) noexcept {
 }
 }
 
+#ifdef _WIN32
 #define AA_EXPORT extern "C" __declspec(dllexport) VKAPI_ATTR
+#else
+#define AA_EXPORT extern "C" __attribute__((visibility("default"))) VKAPI_ATTR
+#endif
 AA_EXPORT PFN_vkVoidFunction VKAPI_CALL aaGIPA(VkInstance,const char*);
 AA_EXPORT PFN_vkVoidFunction VKAPI_CALL aaGDPA(VkDevice,const char*);
 AA_EXPORT PFN_vkVoidFunction VKAPI_CALL aaPhys(VkInstance i,const char* name){auto s=instance(key(i));return s?(s->phys?s->phys(i,name):s->gipa(i,name)):nullptr;}
@@ -670,7 +709,7 @@ AA_EXPORT VkResult VKAPI_CALL aaCreateDevice(VkPhysicalDevice physical,const VkD
         // dedicated restoration implementation. Do not silently disturb it.
         for(unsigned n=0;n<info->enabledExtensionCount;++n)if(std::strcmp(info->ppEnabledExtensionNames[n],"VK_EXT_descriptor_buffer")==0 || std::strcmp(info->ppEnabledExtensionNames[n],"VK_EXT_shader_object")==0 || std::strcmp(info->ppEnabledExtensionNames[n],"VK_EXT_mesh_shader")==0 || std::strcmp(info->ppEnabledExtensionNames[n],"VK_NV_mesh_shader")==0 || std::strcmp(info->ppEnabledExtensionNames[n],"VK_EXT_device_generated_commands")==0 || std::strcmp(info->ppEnabledExtensionNames[n],"VK_NV_device_generated_commands")==0)d->enabled=false;
         if(config().selected){ui_channel.open();std::lock_guard<std::mutex> lock(ui_status_mutex);
-            ui_channel.write_status({d->enabled,GetTickCount(),0,0,0,0,0,0,0,config().startup_error});}
+            ui_channel.write_status({d->enabled,tick_ms(),0,0,0,0,0,0,0,config().startup_error});}
         trace(d->enabled?"DEVICE READY native AA opt-in":"DEVICE pass-through; opt-in/extension contract not met");
         std::lock_guard<std::mutex> lock(global_mutex);devices[key(*result)]=d;device_generation.fetch_add(1,std::memory_order_release);
     }return r;
@@ -772,7 +811,7 @@ AA_EXPORT void VKAPI_CALL aaDestroySetLayout(VkDevice h,VkDescriptorSetLayout s,
 AA_EXPORT VkResult VKAPI_CALL aaPipelineLayout(VkDevice h,const VkPipelineLayoutCreateInfo* info,const VkAllocationCallbacks* a,VkPipelineLayout* layout){auto d=device(key(h));auto r=d->f.CreatePipelineLayout(h,info,a,layout);
     if(r==VK_SUCCESS){std::lock_guard<std::recursive_mutex> l(d->mutex);LayoutMeta m;m.definition.valid=!info->pNext && !info->flags && info->setLayoutCount<=descriptor_sets;m.definition.count=info->setLayoutCount;
         for(unsigned i=0;i<std::min(info->setLayoutCount,descriptor_sets);++i){auto s=d->sets.find(info->pSetLayouts[i]);if(s==d->sets.end() || !s->second.valid)m.definition.valid=false;else{m.definition.sets[i]=s->second.canonical;m.dynamic[i]=s->second.dynamic;}}
-        std::vector<std::array<std::uint64_t,3>> pushes;for(unsigned i=0;i<info->pushConstantRangeCount;++i){const auto& p=info->pPushConstantRanges[i];pushes.push_back({p.stageFlags,p.offset,p.size});}std::sort(pushes.begin(),pushes.end());std::vector<std::uint64_t> signature{2};for(auto& p:pushes)signature.insert(signature.end(),p.begin(),p.end());m.definition.push_signature=d->intern(signature);d->layouts[*layout]=m;}return r;}
+        std::vector<std::array<std::uint64_t,3>> pushes;for(unsigned i=0;i<info->pushConstantRangeCount;++i){const auto& p=info->pPushConstantRanges[i];pushes.push_back({p.stageFlags,p.offset,p.size});if(p.stageFlags&VK_SHADER_STAGE_COMPUTE_BIT)m.compute_push=p;}std::sort(pushes.begin(),pushes.end());std::vector<std::uint64_t> signature{2};for(auto& p:pushes)signature.insert(signature.end(),p.begin(),p.end());m.definition.push_signature=d->intern(signature);d->layouts[*layout]=m;}return r;}
 AA_EXPORT void VKAPI_CALL aaDestroyLayout(VkDevice h,VkPipelineLayout p,const VkAllocationCallbacks* a){auto d=device(key(h));{std::lock_guard<std::recursive_mutex> l(d->mutex);d->layouts.erase(p);}d->f.DestroyPipelineLayout(h,p,a);}
 AA_EXPORT VkResult VKAPI_CALL aaPool(VkDevice h,const VkCommandPoolCreateInfo* info,const VkAllocationCallbacks* a,VkCommandPool* pool){auto d=device(key(h));auto r=d->f.CreateCommandPool(h,info,a,pool);if(r==VK_SUCCESS){std::lock_guard<std::recursive_mutex> l(d->mutex);d->pools[*pool]=info->queueFamilyIndex;}return r;}
 AA_EXPORT void VKAPI_CALL aaDestroyPool(VkDevice h,VkCommandPool pool,const VkAllocationCallbacks* a){auto d=device(key(h));{std::lock_guard<std::recursive_mutex> l(d->mutex);command_generation.fetch_add(1,std::memory_order_release);for(auto i=d->commands.begin();i!=d->commands.end();)if(i->second.pool==pool)i=d->commands.erase(i);else++i;d->pools.erase(pool);}d->f.DestroyCommandPool(h,pool,a);}
@@ -798,6 +837,19 @@ AA_EXPORT void VKAPI_CALL aaViewportCount(VkCommandBuffer cb,unsigned count,cons
         if(s.depth_candidate && !s.depth_incomplete)trace("TAA VIEWPORT WITH COUNT count="+std::to_string(count));
         if(s.depth_candidate)s.depth_incomplete=true;d->f.CmdSetViewportWithCount(cb,count,viewports);
     }
+}
+void track_push(Device& d,VkCommandBuffer cb,VkPipelineLayout layout,VkShaderStageFlags stages,unsigned offset,unsigned size,const void* values,bool extended=false){
+    if(!(stages&VK_SHADER_STAGE_COMPUTE_BIT))return;
+    std::lock_guard<std::recursive_mutex> lock(d.mutex);auto& s=d.commands[cb];const auto meta=d.layouts.find(layout);
+    if(extended || stages!=VK_SHADER_STAGE_COMPUTE_BIT || meta==d.layouts.end() || !meta->second.definition.valid || meta->second.compute_push.stageFlags!=VK_SHADER_STAGE_COMPUTE_BIT){s.push_constants.invalidate();return;}
+    if(s.push_constants.record(meta->second.definition.push_signature,offset,size,values))s.push_layout=layout;
+}
+AA_EXPORT void VKAPI_CALL aaPushConstants(VkCommandBuffer cb,VkPipelineLayout layout,VkShaderStageFlags stages,unsigned offset,unsigned size,const void* values){
+    auto d=device(key(cb));d->f.CmdPushConstants(cb,layout,stages,offset,size,values);track_push(*d,cb,layout,stages,offset,size,values);
+}
+AA_EXPORT void VKAPI_CALL aaPushConstants2(VkCommandBuffer cb,const VkPushConstantsInfo* info){
+    auto d=device(key(cb));auto fn=(PFN_vkCmdPushConstants2)d->gdpa(d->handle,"vkCmdPushConstants2");if(!fn)fn=(PFN_vkCmdPushConstants2)d->gdpa(d->handle,"vkCmdPushConstants2KHR");fn(cb,info);
+    track_push(*d,cb,info->layout,info->stageFlags,info->offset,info->size,info->pValues,info->pNext!=nullptr);
 }
 AA_EXPORT void VKAPI_CALL aaBindSets(VkCommandBuffer cb,VkPipelineBindPoint bind,VkPipelineLayout layout,unsigned first,unsigned count,const VkDescriptorSet* sets,unsigned offsets,const unsigned* dynamic){auto d=device(key(cb));d->f.CmdBindDescriptorSets(cb,bind,layout,first,count,sets,offsets,dynamic);if(bind!=VK_PIPELINE_BIND_POINT_COMPUTE)return;
     std::lock_guard<std::recursive_mutex> l(d->mutex);auto& state=d->commands[cb].descriptors;auto p=d->layouts.find(layout);
@@ -855,12 +907,12 @@ AA_EXPORT void VKAPI_CALL aaDrawMulti(VkCommandBuffer cb,unsigned n,const VkMult
 AA_EXPORT void VKAPI_CALL aaDrawMultiIndexed(VkCommandBuffer cb,unsigned n,const VkMultiDrawIndexedInfoEXT* info,unsigned instances,unsigned first,unsigned stride,const int* offsets){auto d=device(key(cb));drawn(*d,cb,false);((PFN_vkCmdDrawMultiIndexedEXT)d->gdpa(d->handle,"vkCmdDrawMultiIndexedEXT"))(cb,n,info,instances,first,stride,offsets);}
 AA_EXPORT void VKAPI_CALL aaExecute(VkCommandBuffer cb,unsigned count,const VkCommandBuffer* child){auto d=device(key(cb));{std::lock_guard<std::recursive_mutex> l(d->mutex);d->commands[cb].unsupported=true;}d->f.CmdExecuteCommands(cb,count,child);}
 void submit_count(Device& d,VkFence fence,std::uint64_t count,std::uint64_t temporal){
-    const auto now=GetTickCount();
-    if(d.enabled && DWORD(now-d.last_status)>=250){
+    const auto now=tick_ms();
+    if(d.enabled && std::uint32_t(now-d.last_status)>=250){
         d.last_status=now;std::lock_guard<std::mutex> lock(ui_status_mutex);
         ui_channel.write_status({true,now,d.width,d.height,d.control_sequence,d.recorded,d.submitted,d.completed,d.bytes,d.last_reason,d.temporal_recorded,d.temporal_reused,d.temporal_completed});
     }
-    if(GetTickCount64()-d.last_observe>5000){d.last_observe=GetTickCount64();unsigned named=0,ldr=0;for(auto& entry:d.images){named+=!entry.second.name.empty();ldr+=entry.second.name=="LDR";}
+    if(monotonic_ms()-d.last_observe>5000){d.last_observe=monotonic_ms();unsigned named=0,ldr=0;for(auto& entry:d.images){named+=!entry.second.name.empty();ldr+=entry.second.name=="LDR";}
         trace("OBSERVE images="+std::to_string(d.images.size())+" named="+std::to_string(named)+" ldr="+std::to_string(ldr)+" dynamic="+std::to_string(d.dynamic_begins)+" legacy="+std::to_string(d.legacy_begins)+" known_fs="+std::to_string(d.known_shaders)+" known_pipeline="+std::to_string(d.known_pipelines));}
     if(fence){if(count)d.fence_counts[fence]={count,temporal};else d.fence_counts.erase(fence);}if(!count)return;d.submitted+=count;if(d.submitted==count || d.submitted%120<count)trace("SUBMITTED aa_frames="+std::to_string(d.submitted)+" scratch_bytes="+std::to_string(d.bytes)+" taa_recorded="+std::to_string(d.temporal_recorded)+" taa_reused="+std::to_string(d.temporal_reused));}
 AA_EXPORT VkResult VKAPI_CALL aaSubmit(VkQueue q,unsigned count,const VkSubmitInfo* info,VkFence fence){auto d=device(key(q));std::uint64_t n=0,t=0;bool work=false;
@@ -899,6 +951,7 @@ PFN_vkVoidFunction hook(const char* name){
  H("CreateSampler",aaSampler) H("DestroySampler",aaDestroySampler)
  H("CreateCommandPool",aaPool) H("DestroyCommandPool",aaDestroyPool) H("AllocateCommandBuffers",aaAllocateCommands) H("FreeCommandBuffers",aaFreeCommands)
  H("BeginCommandBuffer",aaBegin) H("ResetCommandBuffer",aaReset) H("CmdBindPipeline",aaBindPipeline) H("CmdBindDescriptorSets",aaBindSets)
+ H("CmdPushConstants",aaPushConstants) H("CmdPushConstants2",aaPushConstants2) H("CmdPushConstants2KHR",aaPushConstants2)
  H("CmdSetViewport",aaViewport) H("CmdSetViewportWithCount",aaViewportCount) H("CmdSetViewportWithCountEXT",aaViewportCount)
  H("CmdBeginRendering",aaBeginRendering) H("CmdBeginRenderingKHR",aaBeginRendering) H("CmdEndRendering",aaEndRendering) H("CmdEndRenderingKHR",aaEndRendering)
  H("CmdDraw",aaDraw) H("CmdDrawIndexed",aaDrawIndexed) H("CmdDrawIndirect",aaDrawIndirect) H("CmdDrawIndexedIndirect",aaDrawIndexedIndirect) H("CmdExecuteCommands",aaExecute)

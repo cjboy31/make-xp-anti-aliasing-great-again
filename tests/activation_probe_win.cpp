@@ -1,6 +1,10 @@
 // SPDX-License-Identifier: MIT
 #include <vulkan/vulkan.h>
+#ifdef _WIN32
 #include <windows.h>
+#else
+#include <cstdlib>
+#endif
 #include <iostream>
 #include <string>
 int main(int argc,char** argv){
@@ -9,7 +13,11 @@ int main(int argc,char** argv){
     VkInstanceCreateInfo info{VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO};info.pApplicationInfo=&app;VkInstance instance{};
     const auto result=vkCreateInstance(&info,nullptr,&instance);
     if(result!=VK_SUCCESS){std::cerr<<"Probe create instance failed: "<<result<<'\n';return 3;}
+#ifdef _WIN32
     const bool selected=GetEnvironmentVariableW(L"DISABLE_XPFSR24",nullptr,0)!=0;
+#else
+    const bool selected=std::getenv("DISABLE_XPFSR24")!=nullptr;
+#endif
     vkDestroyInstance(instance,nullptr);
     if(selected!=(std::string(argv[1])=="selected")){std::cerr<<"Activation selection mismatch\n";return 4;}
     std::cout<<(selected?"Selected simulator: process-only FSR handover":"Unrelated/disabled/conflicting process: no handover")<<'\n';return 0;

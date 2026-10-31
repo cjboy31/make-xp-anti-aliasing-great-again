@@ -8,11 +8,11 @@ $out=Join-Path $PSScriptRoot 'build/live-layer'
 $shaders=Join-Path $PSScriptRoot 'build/vulkan/shaders'
 [IO.File]::WriteAllText((Join-Path $out 'test-receipt.json'),'{"status":"RUNNING"}')
 foreach($entry in @(@('native_scene_test.vert','native-scene.vert.spv'),@('native_scene_test.frag','native-scene.frag.spv'),@('compute_state_test.comp','compute-state.comp.spv'))){
- & $glsl -V --target-env vulkan1.3 (Join-Path $PSScriptRoot ('shaders/'+$entry[0])) -o (Join-Path $shaders $entry[1])
+ & $glsl -V --target-env vulkan1.1 (Join-Path $PSScriptRoot ('shaders/'+$entry[0])) -o (Join-Path $shaders $entry[1])
  if($LASTEXITCODE -ne 0){throw 'Native scene test shader failed'}
 }
 foreach($entry in @(@('native_taa_scene_test.vert','native-taa-scene.vert.spv'),@('native_taa_scene_test.frag','native-taa-scene.frag.spv'),@('native_taa_post_test.frag','native-taa-post.frag.spv'))){
- & $glsl -V --target-env vulkan1.3 ('shaders/'+$entry[0]) -o (Join-Path $shaders $entry[1])
+ & $glsl -V --target-env vulkan1.1 ('shaders/'+$entry[0]) -o (Join-Path $shaders $entry[1])
  if($LASTEXITCODE -ne 0){throw 'Native TAA scene shader failed'}
 }
 $flags=@('-std=c++17','-O2','-static','-Wall','-Wextra','-Wpedantic','-Werror','-Wno-missing-field-initializers','-DWIN32_LEAN_AND_MEAN','-DNOMINMAX',('-I'+(Join-Path $headers 'include')),('-I'+(Join-Path $PSScriptRoot 'include')),('-I'+(Join-Path $PSScriptRoot 'third_party/smaa')))

@@ -1,0 +1,83 @@
+name: Native Linux AA beta
+on: [push, pull_request, workflow_dispatch]
+permissions:
+  contents: read
+jobs:
+  linux-build:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - name: Install Linux build and offscreen validation dependencies
+        run: sudo apt-get update && sudo apt-get install -y cmake ninja-build g++ libvulkan-dev glslang-tools mesa-vulkan-drivers vulkan-validationlayers libssl-dev libgl-dev
+      - name: Fetch pinned build-only Vulkan headers and official X-Plane SDK
+        run: |
+          curl --fail --location --retry 2 https://github.com/KhronosGroup/Vulkan-Headers/archive/d4a196d8c84e032d27f999adcea3075517c1c97f.tar.gz -o /tmp/vulkan-headers.tar.gz
+          mkdir -p /tmp/aa-vulkan-headers
+          tar -xzf /tmp/vulkan-headers.tar.gz -C /tmp/aa-vulkan-headers --strip-components=1
+          curl --fail --location --retry 2 https://developer.x-plane.com/wp-content/plugins/code-sample-generation/sdk_zip_files/XPSDK430.zip -o /tmp/XPSDK430.zip
+          echo 'b9875ab27b593927b4f9b3e0ddfffe7401ee5dce6d86b50aea0da65f70ff7816  /tmp/XPSDK430.zip' | sha256sum --check
+          unzip -q /tmp/XPSDK430.zip -d /tmp/aa-xplane-sdk
+      - name: Build native layer, plugin and regression fixtures
+        run: |
+          python3 tools/verify_vendor.py
+          cmake -S . -B build-linux -G Ninja -DCMAKE_BUILD_TYPE=Release -DNATIVE_AA_BUILD_VULKAN_TESTS=ON -DNATIVE_AA_BUILD_LINUX_LAYER=ON -DNATIVE_AA_BUILD_LINUX_PLUGIN=ON -DNATIVE_AA_XPLANE_SDK=/tmp/aa-xplane-sdk/SDK -DVulkan_INCLUDE_DIR=/tmp/aa-vulkan-headers/include
+          cmake --build build-linux --parallel 2
+      - name: Linux baseline CPU, IPC and offscreen Vulkan tests
+        run: |
+          export VK_ICD_FILENAMES="$(find /usr/share/vulkan/icd.d -name '*lvp*.json' -print -quit)"
+          test -f "$VK_ICD_FILENAMES"
+          export VK_LOADER_LAYERS_DISABLE='~implicit~'
+          ctest --test-dir build-linux --output-on-failure
+          tar -czf linux-build-for-validation.tar.gz build-linux/libnative-aa.so build-linux/lin.xpl build-linux/native_aa_activation_probe build-linux/native_scene_layer_tests build-linux/shaders
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: linux-baseline-binaries
+          path: linux-build-for-validation.tar.gz
+          if-no-files-found: error
+  linux-runtime:
+    needs: linux-build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: linux-baseline-binaries
+      - name: Install current software Vulkan runtime
+        run: sudo apt-get update && sudo apt-get install -y libvulkan1 mesa-vulkan-drivers vulkan-validationlayers libgl1 libssl3t64
+      - name: Test identical baseline-built binaries on current Vulkan runtime
+        run: |
+          tar -xzf linux-build-for-validation.tar.gz
+          export VK_ICD_FILENAMES="$(find /usr/share/vulkan/icd.d -name '*lvp*.json' -print -quit)"
+          test -f "$VK_ICD_FILENAMES"
+          python3 tools/test_linux_layer.py build-linux
+      - name: Package Linux beta and verify installation and real loader isolation
+        run: |
+          export VK_ICD_FILENAMES="$(find /usr/share/vulkan/icd.d -name '*lvp*.json' -print -quit)"
+          python3 tools/package_linux.py build-linux dist-linux
+          python3 tools/test_linux_package.py dist-linux/Make-XP-AA-0.2.0-linux-beta.1-Linux-x86_64.tar.gz build-linux/native_aa_activation_probe
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: Native-AA-Linux-beta-package
+          path: |
+            dist-linux/*.tar.gz
+            dist-linux/SHA256SUMS.txt
+          if-no-files-found: error
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
+        with:
+          name: native-linux-aa-beta-checks
+          path: |
+            build-linux/libnative-aa.so
+            build-linux/lin.xpl
+            build-linux/native_aa_activation_probe
+            build-linux/linux-layer-test-receipt.json
+            build-linux/linux-layer-*.log
+            build-linux/Testing/Temporary/LastTest.log

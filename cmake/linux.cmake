@@ -3,7 +3,7 @@ option(NATIVE_AA_BUILD_LINUX_LAYER "Build native Linux Vulkan layer and injected
 option(NATIVE_AA_BUILD_LINUX_PLUGIN "Build native Linux XPLM panel with external SDK" OFF)
 set(NATIVE_AA_XPLANE_SDK "" CACHE PATH "External X-Plane SDK (never packaged)")
 if(NATIVE_AA_BUILD_LINUX_LAYER OR NATIVE_AA_BUILD_LINUX_PLUGIN)
-  if(NOT CMAKE_SYSTEM_NAME STREQUAL "Linux" OR NOT CMAKE_SIZEOF_VOID_P EQUAL 8)
+  if(NOT CMAKE_SYSTEM_NAME STREQUAL "Linux" OR NOT CMAKE_SIZEOF_VOID_P EQUAL 8 OR NOT CMAKE_SYSTEM_PROCESSOR MATCHES "^(x86_64|amd64|AMD64)$")
     message(FATAL_ERROR "The Linux beta requires native Linux x86_64")
   endif()
   find_package(Threads REQUIRED)

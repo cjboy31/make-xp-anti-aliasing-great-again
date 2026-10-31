@@ -7,6 +7,7 @@ import re
 import shutil
 import subprocess
 import sys
+import struct
 import tarfile
 
 repo = Path(__file__).resolve().parent.parent
@@ -18,6 +19,9 @@ stage.mkdir(parents=True, exist_ok=False)
 sha = lambda path: hashlib.sha256(path.read_bytes()).hexdigest()
 receipt = json.loads((build / 'linux-layer-test-receipt.json').read_text())
 assert receipt['status'] == 'PASS' and receipt['layerSHA256'] == sha(build / 'libnative-aa.so')
+for binary in ('libnative-aa.so', 'lin.xpl'):
+    header = (build / binary).read_bytes()[:20]
+    assert header[:6] == b'\x7fELF\x02\x01' and struct.unpack_from('<H', header, 18)[0] == 62, 'Linux x86_64 ELF required'
 library = 'native-aa-' + receipt['layerSHA256'][:12] + '.so'
 files = {
     'install-linux.py': repo / 'tools/install-linux.py',

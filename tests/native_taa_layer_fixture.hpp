@@ -23,7 +23,9 @@ struct TaaLayerScene {
             const VkDescriptorSetLayoutBinding binding{0,VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,1,VK_SHADER_STAGE_FRAGMENT_BIT,nullptr};
             VkDescriptorSetLayoutCreateInfo sl{VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO};sl.bindingCount=1;sl.pBindings=&binding;
             check(vkCreateDescriptorSetLayout(c.device,&sl,nullptr,&set_layout),"TAA post set layout");
-            VkPushConstantRange range{VK_SHADER_STAGE_FRAGMENT_BIT,0,8};
+            // Keep synthetic graphics data separate from the native compute
+            // bias at byte 0; do not rely on overlapping cross-stage storage.
+            VkPushConstantRange range{VK_SHADER_STAGE_FRAGMENT_BIT,16,8};
             VkPipelineLayoutCreateInfo pl{VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO};pl.pushConstantRangeCount=1;pl.pPushConstantRanges=&range;
             check(vkCreatePipelineLayout(c.device,&pl,nullptr,&geometry_layout),"TAA geometry layout");
             pl.pushConstantRangeCount=0;pl.pPushConstantRanges=nullptr;pl.setLayoutCount=1;pl.pSetLayouts=&set_layout;
@@ -77,7 +79,7 @@ struct TaaLayerScene {
         // pair and single forms, while preserving both untouched after capture.
         const std::array<VkViewport,2> native_viewports{vp,vp};
         vkCmdBeginRendering(cb,&rendering);vkCmdBindPipeline(cb,VK_PIPELINE_BIND_POINT_GRAPHICS,geometry);vkCmdSetViewport(cb,0,negative_y?2:1,native_viewports.data());vkCmdSetScissor(cb,0,1,&scissor);
-        const std::array<float,2> dimensions{float(size.width),float(size.height)};vkCmdPushConstants(cb,geometry_layout,VK_SHADER_STAGE_FRAGMENT_BIT,0,8,dimensions.data());
+        const std::array<float,2> dimensions{float(size.width),float(size.height)};vkCmdPushConstants(cb,geometry_layout,VK_SHADER_STAGE_FRAGMENT_BIT,16,8,dimensions.data());
         vkCmdDraw(cb,3,1,0,0);vkCmdEndRendering(cb);
         hdr.transition(cb,VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);before.transition(cb,VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL);
         color.imageView=before.view;color.imageLayout=before.layout;rendering.pDepthAttachment=nullptr;

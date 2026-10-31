@@ -19,6 +19,10 @@ unknown extension data, missing bytes or excessive ranges bypass injection.
 Both the legacy and core/KHR push-constant commands are intercepted. This avoids
 depending on implicit preservation across inserted private pipelines. Its CPU
 contracts and actual injected readbacks must pass before a package is released.
+The separate synthetic TAA scene also uses disjoint byte ranges for graphics
+dimensions and compute bias; it does not rely on overlapping cross-stage push
+storage. The native compute result remains checked without a pipeline, set or
+compute-push rebind by the fixture after AA injection.
 
 The per-user layer manifest points to a content-hashed library in the selected
 simulator. Its layer/manifest name includes the simulator-root hash so separate

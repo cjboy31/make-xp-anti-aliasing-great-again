@@ -14,6 +14,20 @@ foreach($entry in @(@('native_scene_test.vert','native-scene.vert.spv'),@('nativ
 $flags=@('-std=c++17','-O2','-static','-Wall','-Wextra','-Wpedantic','-Werror','-Wno-missing-field-initializers','-DWIN32_LEAN_AND_MEAN','-DNOMINMAX',('-I'+(Join-Path $headers 'include')),('-I'+(Join-Path $PSScriptRoot 'include')),('-I'+(Join-Path $PSScriptRoot 'third_party/smaa')))
 & $cc @flags src/vulkan/smaa_pipeline.cpp src/vulkan/compute_smaa_pipeline.cpp src/vulkan/camera_motion_pipeline.cpp src/motion.cpp tests/native_scene_layer_tests.cpp build/vulkan/vulkan-loader.lib -o (Join-Path $out 'native_scene_layer_tests.exe')
 if($LASTEXITCODE -ne 0){throw 'Native scene fixture compilation failed'}
+& $cc @flags tests/live_channel_tests.cpp -o (Join-Path $out 'live_channel_tests.exe')
+if($LASTEXITCODE -ne 0){throw 'IPC fixture compilation failed'}
+& (Join-Path $out 'live_channel_tests.exe')
+if($LASTEXITCODE -ne 0){throw 'IPC fixture failed'}
+& $cc @flags tests/settings_tests.cpp -o (Join-Path $out 'settings_tests.exe')
+if($LASTEXITCODE -ne 0){throw 'Settings fixture compilation failed'}
+& (Join-Path $out 'settings_tests.exe')
+if($LASTEXITCODE -ne 0){throw 'Settings fixture failed'}
+& $cc @flags src/vulkan/smaa_pipeline.cpp src/vulkan/compute_smaa_pipeline.cpp src/vulkan/camera_motion_pipeline.cpp src/motion.cpp tests/live_quality_gpu_tests.cpp build/vulkan/vulkan-loader.lib -o (Join-Path $out 'live_quality_gpu_tests.exe')
+if($LASTEXITCODE -ne 0){throw 'Quality fixture compilation failed'}
+$env:VK_LAYER_PATH=$validation
+$env:VK_LOADER_LAYERS_DISABLE='~implicit~'
+& (Join-Path $out 'live_quality_gpu_tests.exe') $shaders
+if($LASTEXITCODE -ne 0){throw 'Quality GPU fixture failed'}
 $env:VK_LAYER_PATH=$out+';'+$validation
 $env:VK_LOADER_LAYERS_DISABLE='~implicit~'
 $env:VK_INSTANCE_LAYERS='VK_LAYER_NATIVE_AA_live_test'
@@ -29,7 +43,7 @@ $env:NATIVE_AA_CONTROL=Join-Path $out 'fixture-control.txt'
 if($LASTEXITCODE -ne 0){throw 'Live adapter fixture failed'}
 $lines=Get-Content -LiteralPath $env:NATIVE_AA_LOG
 if(-not ($lines | Select-String 'COMPLETED aa_frames=') -or -not ($lines | Select-String 'scratch_remaining=0')){throw 'Missing current-session completion or teardown evidence'}
-Write-Output 'Live adapter fixture passed with completion and scratch-retirement evidence.'
+Write-Output 'Live adapter fixture passed, including live SMAA/FXAA, all quality presets and strength controls.'
 $env:NATIVE_AA_LOG=Join-Path $out 'allocation-bypass.log'
 [IO.File]::WriteAllText($env:NATIVE_AA_LOG,'')
 $env:NATIVE_AA_TEST_FAIL_ALLOC='1'

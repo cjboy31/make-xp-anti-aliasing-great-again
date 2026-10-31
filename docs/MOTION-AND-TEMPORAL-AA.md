@@ -1,8 +1,9 @@
 # Motion vectors and AA alternatives
 
 Research and first implementation milestone: 2026-10-31. This experiment is
-separate from the tested SMAA-only milestone. Nothing here enables a live
-simulator motion provider or a TAA filter yet.
+separate from the tested spatial-AA milestone. A GPU temporal resolve is now
+implemented and tested offscreen; no verified live simulator motion/jitter
+provider is connected, so the in-sim TAA choice remains unavailable.
 
 ## Source review and decisions
 
@@ -17,7 +18,8 @@ simulator motion provider or a TAA filter yet.
 
 These are research references, not bundled plug-ins or endorsements. Public code
 availability does not mean all files share our original MIT license. The only
-imported graphics algorithm remains the separately attributed MIT SMAA source.
+imported graphics algorithms are the separately attributed SMAA and FXAA
+sources listed in [the dependency notices](../THIRD_PARTY.md).
 
 ## Motion incorporated now
 
@@ -73,6 +75,26 @@ CPU CI run these checks; see Actions for each commit's actual result. These are
 synthetic tests, not real X-Plane motion-field validation.
 
 ## TAA evaluation plan
+
+The original `TemporalResolvePipeline` now consumes native-size current/history
+color, canonical motion/predicted previous depth, actual previous depth and a
+reactive mask. It adds jitter delta exactly once, samples history in linear
+light, clips it in current-neighborhood luminance/chroma space, reduces feedback
+with motion/reactivity, rejects invalid/outside/disoccluded pixels and preserves
+current alpha. An immutable reset pipeline is selected from verified CPU frame
+stamps; unverified jitter, cuts, changed view/session/size or sequence gaps cannot
+reuse history. The recorder allocates no resources per frame and does not submit,
+wait or read back; the caller owns images, constants and synchronization.
+
+The new R9700 fixture checked 20 frames / 63,700 pixels against a separate
+double-precision reference, including fractional jitter, translated vectors,
+depth mismatch, reactive masks, NaN/Inf, out-of-bounds motion, history reset
+reasons and alpha. It passed with zero standard/synchronization validation
+messages. This establishes the resolve's behavior on supplied inputs, not live
+motion quality or a working X-Plane TAA integration. Projection datarefs are
+read-only and a cleared post-tonemap depth image is not reliable world depth.
+No camera-control jitter, assumed-static whole-scene mask, blind history blend,
+or imported GPL renderer is substituted to make a selectable checkbox.
 
 1. Establish independent native scene color/depth and exact current/previous
    projection provenance while simulator FSR is off. Prove that render jitter is

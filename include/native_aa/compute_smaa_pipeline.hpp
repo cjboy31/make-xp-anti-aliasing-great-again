@@ -13,7 +13,9 @@ struct ComputeSmaaViews {
 // and completion. RGBA8 scratch avoids storage-image extended-format features.
 class ComputeSmaaPipeline {
 public:
-    ComputeSmaaPipeline(VkDevice,VkExtent2D,const ComputeSmaaViews&,const std::filesystem::path&);
+    // Optional live controls use a private uniform buffer, never application push
+    // constants. Variant 0..3 selects SMAA quality; 4 selects FXAA 3.11.
+    ComputeSmaaPipeline(VkDevice,VkExtent2D,const ComputeSmaaViews&,const std::filesystem::path&,VkBuffer controls=VK_NULL_HANDLE,unsigned variant=2);
     ~ComputeSmaaPipeline();
     ComputeSmaaPipeline(const ComputeSmaaPipeline&)=delete;
     ComputeSmaaPipeline& operator=(const ComputeSmaaPipeline&)=delete;

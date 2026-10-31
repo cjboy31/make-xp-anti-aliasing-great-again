@@ -8,7 +8,15 @@ layout(constant_id=0) const float frameWidth=1.0;
 layout(constant_id=1) const float frameHeight=1.0;
 #define SMAA_RT_METRICS vec4(1.0/frameWidth,1.0/frameHeight,frameWidth,frameHeight)
 #define SMAA_GLSL_4 1
+#if !defined(AA_QUALITY) || AA_QUALITY == 2
 #define SMAA_PRESET_HIGH 1
+#elif AA_QUALITY == 0
+#define SMAA_PRESET_LOW 1
+#elif AA_QUALITY == 1
+#define SMAA_PRESET_MEDIUM 1
+#else
+#define SMAA_PRESET_ULTRA 1
+#endif
 #define discard return vec2(0.0)
 #define texture(s,c) textureLod(s,c,0.0)
 #define textureOffset(s,c,o) textureLodOffset(s,c,0.0,o)
@@ -20,6 +28,9 @@ layout(set=0,binding=0) uniform sampler2D first;
 layout(set=0,binding=1) uniform sampler2D second;
 layout(set=0,binding=2) uniform sampler2D third;
 layout(rgba8,set=0,binding=3) writeonly uniform image2D target;
+#ifdef AA_LIVE_CONTROLS
+layout(std140,set=0,binding=4) uniform LiveControls { vec4 control; };
+#endif
 vec3 encodeSRGB(vec3 value) {
     value=clamp(value,0.0,1.0);
     return mix(1.055*pow(value,vec3(1.0/2.4))-0.055,12.92*value,lessThanEqual(value,vec3(0.0031308)));
@@ -38,6 +49,9 @@ void main() {
 #else
     SMAANeighborhoodBlendingVS(uv,offsets[0]);
     result=SMAANeighborhoodBlendingPS(uv,offsets[0],first,second);
+#ifdef AA_LIVE_CONTROLS
+    result.rgb=mix(texelFetch(first,p,0).rgb,result.rgb,control.x);
+#endif
     result=vec4(encodeSRGB(result.rgb),texelFetch(third,p,0).a);
 #endif
     imageStore(target,p,result);

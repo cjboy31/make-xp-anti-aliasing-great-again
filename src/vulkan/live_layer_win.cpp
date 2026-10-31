@@ -1,9 +1,11 @@
-// Private opt-in Windows live-test adapter. Never registered globally.
+// Windows native-scene adapter. Explicit test activation, or an installed,
+// selectively admitted per-user implicit layer; other applications pass through.
 // The simulator's unmodified native LDR image is admitted by exact shader,
 // debug name, format, extent, native-HDR extent, view and rendering contract.
 #include "live_dispatch.hpp"
 #include "native_aa/compute_smaa_pipeline.hpp"
 #include "native_aa/descriptor_state.hpp"
+#include "native_aa/live_channel_win.hpp"
 #include <vulkan/vk_layer.h>
 #include <windows.h>
 #include <bcrypt.h>
@@ -36,6 +38,7 @@ std::wstring env(const wchar_t* key) {
 struct Config {
     bool selected=false,enabled=false,test=false;
     std::filesystem::path shaders,log,control;
+    std::string startup_error;
     std::string shader="bb399771f10589eea4ad2d8e7a805e0581ce10a36a7f7c74f7fdfaaad9b085fe";
     Config() {
         wchar_t exe[32768]{}; GetModuleFileNameW(nullptr,exe,32768);
@@ -44,6 +47,30 @@ struct Config {
         selected=!expected.empty() && _wcsicmp(exe,expected_path.c_str())==0;
         enabled=selected && env(L"NATIVE_AA_LIVE_TEST")==L"1" && env(L"DISABLE_XPFSR24")==L"1";
         shaders=env(L"NATIVE_AA_SHADERS"); log=env(L"NATIVE_AA_LOG"); control=env(L"NATIVE_AA_CONTROL");
+        if(expected.empty() && env(L"NATIVE_AA_DISABLE").empty()){
+            // An installed layer admits only the X-Plane executable beside its
+            // own Resources/plugins/NativeAA directory and explicit marker.
+            HMODULE module{};wchar_t filename[32768]{};
+            if(GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS|GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,reinterpret_cast<LPCWSTR>(&env),&module) && GetModuleFileNameW(module,filename,32768)){
+                const auto renderer=std::filesystem::path(filename).parent_path();
+                const auto plugin=renderer.parent_path(),plugins=plugin.parent_path(),resources=plugins.parent_path(),root=resources.parent_path();
+                const auto installed_exe=(root/L"X-Plane.exe").lexically_normal().make_preferred();
+                std::ifstream activation(plugin/L"standalone.enabled");std::string marker;std::getline(activation,marker);
+                selected=renderer.filename()==L"renderer" && plugin.filename()==L"NativeAA" && plugins.filename()==L"plugins" && resources.filename()==L"Resources" &&
+                    marker=="NativeAAStandalone=1" && _wcsicmp(exe,installed_exe.c_str())==0;
+                if(selected){
+                    shaders=renderer/L"shaders";log=root/L"Output"/L"NativeAA"/(L"renderer-"+std::to_wstring(GetCurrentProcessId())+L"-"+std::to_wstring(GetTickCount64())+L".log");
+                    std::error_code ec;std::filesystem::create_directories(log.parent_path(),ec);
+                    if(!env(L"XPFSR24_AUTOMATIC").empty() || (!env(L"XPFSR24_RUNTIME").empty() && env(L"DISABLE_XPFSR24").empty()))
+                        startup_error="FSR renderer already selected; start using the Native AA shortcut";
+                    else{
+                        // Process-only handover. Never edit FSR settings or its
+                        // registry. Negotiation occurs before this layer's GIPA.
+                        SetEnvironmentVariableW(L"DISABLE_XPFSR24",L"1");enabled=true;
+                    }
+                }
+            }
+        }
         test=std::filesystem::path(exe).filename()==L"native_scene_layer_tests.exe";
         auto testhash=env(L"NATIVE_AA_TEST_SHADER");
         if(test && testhash.size()==64) shader=std::string(testhash.begin(),testhash.end());
@@ -51,6 +78,8 @@ struct Config {
     }
 };
 Config& config(){static Config c;return c;}
+LiveChannel ui_channel;
+std::mutex ui_status_mutex;
 HANDLE exception_file=INVALID_HANDLE_VALUE;
 PVOID exception_handler=nullptr;
 std::atomic<unsigned> exception_count{0};
@@ -123,6 +152,7 @@ struct Device {
     VkPhysicalDeviceMemoryProperties memory{};std::vector<VkQueueFamilyProperties> families;
     std::recursive_mutex mutex;
     std::unordered_map<VkImage,ImageMeta> images;
+    std::unordered_map<VkSwapchainKHR,std::uint64_t> outputs;
     std::unordered_map<std::uint64_t,unsigned> native_extents;
     std::unordered_map<VkImageView,ViewMeta> views;
     std::unordered_map<VkShaderModule,bool> shaders;
@@ -140,6 +170,7 @@ struct Device {
     std::uint64_t bytes=0,recorded=0,submitted=0,completed=0,last_poll=0,last_observe=0;
     std::uint64_t dynamic_begins=0,legacy_begins=0,known_shaders=0,known_pipelines=0;
     bool enabled=false,live=true;std::string last_reason;
+    Settings settings;unsigned control_sequence=0,width=0,height=0;DWORD last_status=0;
     std::uint64_t intern(const std::vector<std::uint64_t>& value) {
         auto [it,added]=canonical.emplace(value,canonical.size()+1);(void)added;return it->second;
     }
@@ -176,7 +207,8 @@ struct Surface {
     Device& d;VkImage native{};VkExtent2D extent{};unsigned family{};
     PrivateImage source,edges,weights,output,area,search;
     VkBuffer staging{};VkDeviceMemory staging_memory{};VkDeviceSize staging_bytes{};
-    std::unique_ptr<ComputeSmaaPipeline> pipeline;
+    VkBuffer controls{};VkDeviceMemory controls_memory{};VkDeviceSize controls_bytes{};
+    std::array<std::unique_ptr<ComputeSmaaPipeline>,5> pipelines;
     Surface(Device& device,VkImage image,VkExtent2D size,unsigned queue_family):d(device),native(image),extent(size),family(queue_family) {
         try {
             allocate(source,size,VK_FORMAT_R8G8B8A8_UNORM,VK_IMAGE_USAGE_SAMPLED_BIT|VK_IMAGE_USAGE_TRANSFER_DST_BIT,true);
@@ -196,7 +228,13 @@ struct Surface {
             std::memcpy(mapped,areaTexBytes,AREATEX_SIZE);std::memcpy(static_cast<unsigned char*>(mapped)+AREATEX_SIZE,searchTexBytes,SEARCHTEX_SIZE);
             d.f.UnmapMemory(d.handle,staging_memory);
             Scope scope(d);
-            pipeline=std::make_unique<ComputeSmaaPipeline>(d.handle,size,ComputeSmaaViews{source.view,source.srgb,area.view,search.view,edges.view,weights.view,output.view},config().shaders);
+            buffer.size=16;buffer.usage=VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT|VK_BUFFER_USAGE_TRANSFER_DST_BIT;
+            require(d.f.CreateBuffer(d.handle,&buffer,nullptr,&controls),"Create private AA controls");
+            d.f.GetBufferMemoryRequirements(d.handle,controls,&req);reserve(req.size);controls_bytes=req.size;
+            alloc.allocationSize=req.size;alloc.memoryTypeIndex=d.memory_type(req.memoryTypeBits,VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+            require(d.f.AllocateMemory(d.handle,&alloc,nullptr,&controls_memory),"Allocate private AA controls");d.bytes+=req.size;
+            require(d.f.BindBufferMemory(d.handle,controls,controls_memory,0),"Bind private AA controls");
+            prepare(2);
             trace("READY native scene "+std::to_string(size.width)+"x"+std::to_string(size.height)+" scratch_bytes="+std::to_string(d.bytes));
         }catch(...){destroy();throw;}
     }
@@ -226,8 +264,25 @@ struct Surface {
     void scratch(VkCommandBuffer cb,PrivateImage& image,VkImageLayout layout,VkPipelineStageFlags dst,VkAccessFlags access) {
         barrier(cb,image.image,VK_IMAGE_LAYOUT_UNDEFINED,layout,VK_PIPELINE_STAGE_ALL_COMMANDS_BIT,VK_ACCESS_MEMORY_READ_BIT|VK_ACCESS_MEMORY_WRITE_BIT,dst,access);
     }
+    void prepare(unsigned variant){
+        if(!pipelines[variant])pipelines[variant]=std::make_unique<ComputeSmaaPipeline>(d.handle,extent,
+            ComputeSmaaViews{source.view,source.srgb,area.view,search.view,edges.view,weights.view,output.view},config().shaders,controls,variant);
+    }
     void record(VkCommandBuffer cb) {
         Scope scope(d);
+        const auto variant=d.settings.method==Method::fxaa?4:d.settings.quality;
+        // Create/cache immutable pipelines before touching any native layout.
+        // A failed quality change must leave the simulator image untouched.
+        prepare(variant);
+        VkBufferMemoryBarrier control_barrier{VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER};
+        control_barrier.buffer=controls;control_barrier.size=16;
+        control_barrier.srcQueueFamilyIndex=control_barrier.dstQueueFamilyIndex=VK_QUEUE_FAMILY_IGNORED;
+        control_barrier.srcAccessMask=VK_ACCESS_MEMORY_READ_BIT|VK_ACCESS_MEMORY_WRITE_BIT;control_barrier.dstAccessMask=VK_ACCESS_TRANSFER_WRITE_BIT;
+        d.f.CmdPipelineBarrier(cb,VK_PIPELINE_STAGE_ALL_COMMANDS_BIT,VK_PIPELINE_STAGE_TRANSFER_BIT,0,0,nullptr,1,&control_barrier,0,nullptr);
+        const std::array<float,4> values{d.settings.strength/100.0f,d.settings.subpixel/100.0f,0,0};
+        d.f.CmdUpdateBuffer(cb,controls,0,sizeof(values),values.data());
+        control_barrier.srcAccessMask=VK_ACCESS_TRANSFER_WRITE_BIT;control_barrier.dstAccessMask=VK_ACCESS_UNIFORM_READ_BIT;
+        d.f.CmdPipelineBarrier(cb,VK_PIPELINE_STAGE_TRANSFER_BIT,VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,0,0,nullptr,1,&control_barrier,0,nullptr);
         barrier(cb,native,VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
             VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT,VK_PIPELINE_STAGE_TRANSFER_BIT,VK_ACCESS_TRANSFER_READ_BIT);
         scratch(cb,source,VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,VK_PIPELINE_STAGE_TRANSFER_BIT,VK_ACCESS_TRANSFER_WRITE_BIT);
@@ -242,8 +297,9 @@ struct Surface {
         }
         const std::array<PrivateImage*,3> targets{&edges,&weights,&output};
         for(unsigned pass=0;pass<3;++pass) {
+            if(variant==4 && pass==1)continue;
             scratch(cb,*targets[pass],VK_IMAGE_LAYOUT_GENERAL,VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,VK_ACCESS_SHADER_WRITE_BIT);
-            pipeline->record_pass(cb,pass);
+            pipelines[variant]->record_pass(cb,pass);
             barrier(cb,targets[pass]->image,VK_IMAGE_LAYOUT_GENERAL,pass<2?VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL:VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
                 VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,VK_ACCESS_SHADER_WRITE_BIT,pass<2?VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT:VK_PIPELINE_STAGE_TRANSFER_BIT,
                 pass<2?VK_ACCESS_SHADER_READ_BIT:VK_ACCESS_TRANSFER_READ_BIT);
@@ -257,7 +313,10 @@ struct Surface {
             VK_PIPELINE_STAGE_ALL_COMMANDS_BIT,VK_ACCESS_MEMORY_READ_BIT|VK_ACCESS_MEMORY_WRITE_BIT);
     }
     void destroy() noexcept {
-        Scope scope(d);pipeline.reset();
+        Scope scope(d);for(auto& pipeline:pipelines)pipeline.reset();
+        if(controls)d.f.DestroyBuffer(d.handle,controls,nullptr);
+        if(controls_memory){d.f.FreeMemory(d.handle,controls_memory,nullptr);d.bytes-=controls_bytes;}
+        controls=VK_NULL_HANDLE;controls_memory=VK_NULL_HANDLE;
         if(staging)d.f.DestroyBuffer(d.handle,staging,nullptr);
         if(staging_memory){d.f.FreeMemory(d.handle,staging_memory,nullptr);d.bytes-=staging_bytes;}
         staging=VK_NULL_HANDLE;staging_memory=VK_NULL_HANDLE;
@@ -275,8 +334,10 @@ void finish_scene(Device& d,VkCommandBuffer cb,Commands& s) noexcept {
     if(!d.enabled || !s.render_candidate) return;
     try {
         const auto now=GetTickCount64();
-        if(config().test || now-d.last_poll>500){d.last_poll=now;if(!config().control.empty()){std::ifstream control(config().control);std::string value;control>>value;d.live=value=="ON";}}
+        if(ui_channel.controls(d.settings,d.control_sequence))d.live=d.settings.enabled;
+        else if(config().test || now-d.last_poll>500){d.last_poll=now;if(!config().control.empty()){std::ifstream control(config().control);std::string value;control>>value;d.live=value=="ON";}}
         if(!d.live){d.reason("live control OFF");return;}
+        if(!d.settings.strength){d.reason("AA strength is zero");return;}
         if(!s.primary){d.reason("scene recorded inside unsupported secondary buffer");return;}
         if(s.unsupported){d.reason("unverified command-state extension or secondary execution");return;}
         if(!s.descriptors.supported){d.reason("unsupported compute descriptor layout/state");return;}
@@ -288,6 +349,9 @@ void finish_scene(Device& d,VkCommandBuffer cb,Commands& s) noexcept {
         }
         if(s.family>=d.families.size() || (d.families[s.family].queueFlags&(VK_QUEUE_GRAPHICS_BIT|VK_QUEUE_COMPUTE_BIT))!=(VK_QUEUE_GRAPHICS_BIT|VK_QUEUE_COMPUTE_BIT)){d.reason("queue lacks graphics+compute");return;}
         const auto extent=(std::uint64_t(s.extent.width)<<32)|s.extent.height;
+        if(!config().test && std::none_of(d.outputs.begin(),d.outputs.end(),[extent](const auto& entry){return entry.second==extent;})){
+            d.reason("input is not native output size; set X-Plane input scale to Full");return;
+        }
         auto native=d.native_extents.find(extent);
         if(native==d.native_extents.end() || !native->second){d.reason("native scene extent not verified");return;}
         if(d.failed.count(s.render_image)){d.reason("previous AA allocation failed for this scene image");return;}
@@ -298,6 +362,7 @@ void finish_scene(Device& d,VkCommandBuffer cb,Commands& s) noexcept {
         }
         if(it->second->family!=s.family){d.reason("scene queue family changed");return;}
         it->second->record(cb);
+        d.width=s.extent.width;d.height=s.extent.height;
         if(s.compute)d.f.CmdBindPipeline(cb,VK_PIPELINE_BIND_POINT_COMPUTE,s.compute);
         for(unsigned n=0;n<descriptor_sets;++n) {
             const auto& binding=s.descriptors.bound[n];if(!binding.valid)continue;
@@ -305,7 +370,7 @@ void finish_scene(Device& d,VkCommandBuffer cb,Commands& s) noexcept {
             d.f.CmdBindDescriptorSets(cb,VK_PIPELINE_BIND_POINT_COMPUTE,reinterpret_cast<VkPipelineLayout>(binding.layout),n,1,&set,binding.offset_count,binding.offsets.data());
         }
         ++s.aa_recorded;++d.recorded;
-        if(d.recorded==1)trace("RECORDED native SMAA1x; completion not yet confirmed");
+        if(d.recorded==1)trace("RECORDED native AA; completion not yet confirmed");
         d.last_reason.clear();
     }catch(const std::exception& error){d.reason(error.what());}catch(...){d.reason("unexpected adapter exception");}
 }
@@ -347,6 +412,8 @@ AA_EXPORT VkResult VKAPI_CALL aaCreateDevice(VkPhysicalDevice physical,const VkD
         // A device with descriptor-buffer or shader-object state needs a
         // dedicated restoration implementation. Do not silently disturb it.
         for(unsigned n=0;n<info->enabledExtensionCount;++n)if(std::strcmp(info->ppEnabledExtensionNames[n],"VK_EXT_descriptor_buffer")==0 || std::strcmp(info->ppEnabledExtensionNames[n],"VK_EXT_shader_object")==0 || std::strcmp(info->ppEnabledExtensionNames[n],"VK_EXT_mesh_shader")==0 || std::strcmp(info->ppEnabledExtensionNames[n],"VK_NV_mesh_shader")==0 || std::strcmp(info->ppEnabledExtensionNames[n],"VK_EXT_device_generated_commands")==0 || std::strcmp(info->ppEnabledExtensionNames[n],"VK_NV_device_generated_commands")==0)d->enabled=false;
+        if(config().selected){ui_channel.open();std::lock_guard<std::mutex> lock(ui_status_mutex);
+            ui_channel.write_status({d->enabled,GetTickCount(),0,0,0,0,0,0,0,config().startup_error});}
         trace(d->enabled?"DEVICE READY native AA opt-in":"DEVICE pass-through; opt-in/extension contract not met");
         std::lock_guard<std::mutex> lock(global_mutex);devices[key(*result)]=d;device_generation.fetch_add(1,std::memory_order_release);
     }return r;
@@ -354,6 +421,16 @@ AA_EXPORT VkResult VKAPI_CALL aaCreateDevice(VkPhysicalDevice physical,const VkD
 AA_EXPORT void VKAPI_CALL aaDestroyDevice(VkDevice handle,const VkAllocationCallbacks* alloc){auto d=device(key(handle));if(!d)return;
     {std::lock_guard<std::recursive_mutex> lock(d->mutex);d->surfaces.clear();trace("STOP recorded="+std::to_string(d->recorded)+" submitted="+std::to_string(d->submitted)+" completed="+std::to_string(d->completed)+" scratch_remaining="+std::to_string(d->bytes));}
     {std::lock_guard<std::mutex> lock(global_mutex);devices.erase(key(handle));device_generation.fetch_add(1,std::memory_order_release);command_generation.fetch_add(1,std::memory_order_release);}d->f.DestroyDevice(handle,alloc);}
+AA_EXPORT VkResult VKAPI_CALL aaCreateSwapchain(VkDevice h,const VkSwapchainCreateInfoKHR* info,const VkAllocationCallbacks* a,VkSwapchainKHR* swapchain){
+    auto d=device(key(h));auto fn=(PFN_vkCreateSwapchainKHR)d->gdpa(h,"vkCreateSwapchainKHR");const auto result=fn(h,info,a,swapchain);
+    if(result==VK_SUCCESS){std::lock_guard<std::recursive_mutex> lock(d->mutex);
+        d->outputs[*swapchain]=info->imageArrayLayers==1?(std::uint64_t(info->imageExtent.width)<<32)|info->imageExtent.height:0;}
+    return result;
+}
+AA_EXPORT void VKAPI_CALL aaDestroySwapchain(VkDevice h,VkSwapchainKHR swapchain,const VkAllocationCallbacks* a){
+    auto d=device(key(h));{std::lock_guard<std::recursive_mutex> lock(d->mutex);d->outputs.erase(swapchain);}
+    ((PFN_vkDestroySwapchainKHR)d->gdpa(h,"vkDestroySwapchainKHR"))(h,swapchain,a);
+}
 AA_EXPORT VkResult VKAPI_CALL aaCreateImage(VkDevice h,const VkImageCreateInfo* info,const VkAllocationCallbacks* a,VkImage* image){auto d=device(key(h));auto r=d->f.CreateImage(h,info,a,image);
     if(r==VK_SUCCESS){std::lock_guard<std::recursive_mutex> l(d->mutex);auto copy=*info;copy.pNext=nullptr;copy.pQueueFamilyIndices=nullptr;d->images[*image]={copy,{}};}return r;}
 AA_EXPORT void VKAPI_CALL aaDestroyImage(VkDevice h,VkImage image,const VkAllocationCallbacks* a){auto d=device(key(h));{std::lock_guard<std::recursive_mutex> l(d->mutex);d->surfaces.erase(image);auto m=d->images.find(image);if(m!=d->images.end() && hdr(m->second)){auto& count=d->native_extents[extent_key(m->second)];if(count)--count;}d->images.erase(image);d->failed.erase(image);}d->f.DestroyImage(h,image,a);}
@@ -462,6 +539,11 @@ AA_EXPORT void VKAPI_CALL aaDrawMulti(VkCommandBuffer cb,unsigned n,const VkMult
 AA_EXPORT void VKAPI_CALL aaDrawMultiIndexed(VkCommandBuffer cb,unsigned n,const VkMultiDrawIndexedInfoEXT* info,unsigned instances,unsigned first,unsigned stride,const int* offsets){auto d=device(key(cb));drawn(*d,cb,false);((PFN_vkCmdDrawMultiIndexedEXT)d->gdpa(d->handle,"vkCmdDrawMultiIndexedEXT"))(cb,n,info,instances,first,stride,offsets);}
 AA_EXPORT void VKAPI_CALL aaExecute(VkCommandBuffer cb,unsigned count,const VkCommandBuffer* child){auto d=device(key(cb));{std::lock_guard<std::recursive_mutex> l(d->mutex);d->commands[cb].unsupported=true;}d->f.CmdExecuteCommands(cb,count,child);}
 void submit_count(Device& d,VkFence fence,std::uint64_t count){
+    const auto now=GetTickCount();
+    if(d.enabled && DWORD(now-d.last_status)>=250){
+        d.last_status=now;std::lock_guard<std::mutex> lock(ui_status_mutex);
+        ui_channel.write_status({true,now,d.width,d.height,d.control_sequence,d.recorded,d.submitted,d.completed,d.bytes,d.last_reason});
+    }
     if(GetTickCount64()-d.last_observe>5000){d.last_observe=GetTickCount64();unsigned named=0,ldr=0;for(auto& entry:d.images){named+=!entry.second.name.empty();ldr+=entry.second.name=="LDR";}
         trace("OBSERVE images="+std::to_string(d.images.size())+" named="+std::to_string(named)+" ldr="+std::to_string(ldr)+" dynamic="+std::to_string(d.dynamic_begins)+" legacy="+std::to_string(d.legacy_begins)+" known_fs="+std::to_string(d.known_shaders)+" known_pipeline="+std::to_string(d.known_pipelines));}
     if(fence){if(count)d.fence_counts[fence]=count;else d.fence_counts.erase(fence);}if(!count)return;d.submitted+=count;if(d.submitted==count || d.submitted%120<count)trace("SUBMITTED aa_frames="+std::to_string(d.submitted)+" scratch_bytes="+std::to_string(d.bytes));}
@@ -493,6 +575,7 @@ PFN_vkVoidFunction hook(const char* name){
 #define H(n,f) if(std::strcmp(name,"vk" n)==0)return (PFN_vkVoidFunction)f;
  H("GetInstanceProcAddr",aaGIPA) H("GetDeviceProcAddr",aaGDPA) H("CreateInstance",aaCreateInstance) H("DestroyInstance",aaDestroyInstance) H("CreateDevice",aaCreateDevice) H("DestroyDevice",aaDestroyDevice)
  H("CreateImage",aaCreateImage) H("DestroyImage",aaDestroyImage) H("CreateImageView",aaCreateImageView) H("DestroyImageView",aaDestroyImageView)
+ H("CreateSwapchainKHR",aaCreateSwapchain) H("DestroySwapchainKHR",aaDestroySwapchain)
  H("SetDebugUtilsObjectNameEXT",aaName) H("CreateShaderModule",aaCreateShader) H("DestroyShaderModule",aaDestroyShader) H("CreateGraphicsPipelines",aaGraphics) H("DestroyPipeline",aaDestroyPipeline)
  H("DebugMarkerSetObjectNameEXT",aaLegacyName) H("CmdBeginRenderPass",aaBeginRenderPass)
  H("CreateDescriptorSetLayout",aaSetLayout) H("DestroyDescriptorSetLayout",aaDestroySetLayout) H("CreatePipelineLayout",aaPipelineLayout) H("DestroyPipelineLayout",aaDestroyLayout)
@@ -510,6 +593,10 @@ PFN_vkVoidFunction hook(const char* name){
 #undef H
  return nullptr;
 }
-AA_EXPORT PFN_vkVoidFunction VKAPI_CALL aaGIPA(VkInstance i,const char* name){if(!name)return nullptr;auto f=hook(name);if(f)return f;auto s=instance(key(i));return s?s->gipa(i,name):nullptr;}
+AA_EXPORT PFN_vkVoidFunction VKAPI_CALL aaGIPA(VkInstance i,const char* name){if(!name)return nullptr;
+    const bool lifecycle=std::strcmp(name,"vkGetInstanceProcAddr")==0 || std::strcmp(name,"vkGetDeviceProcAddr")==0 || std::strcmp(name,"vkCreateInstance")==0 || std::strcmp(name,"vkDestroyInstance")==0 || std::strcmp(name,"vkCreateDevice")==0 || std::strcmp(name,"vkDestroyDevice")==0;
+    if(config().enabled || lifecycle){auto f=hook(name);if(f)return f;}auto s=instance(key(i));return s?s->gipa(i,name):nullptr;}
 AA_EXPORT PFN_vkVoidFunction VKAPI_CALL aaGDPA(VkDevice h,const char* name){if(!name)return nullptr;auto d=device(key(h));if(!d)return nullptr;auto next=d->gdpa(h,name);if(!next)return nullptr;if(d->enabled){auto f=hook(name);if(f)return f;}else if(std::strcmp(name,"vkDestroyDevice")==0)return (PFN_vkVoidFunction)aaDestroyDevice;return next;}
-AA_EXPORT VkResult VKAPI_CALL aaNegotiate(VkNegotiateLayerInterface* version){if(!version || version->loaderLayerInterfaceVersion<2)return VK_ERROR_INITIALIZATION_FAILED;version->loaderLayerInterfaceVersion=2;version->pfnGetInstanceProcAddr=aaGIPA;version->pfnGetDeviceProcAddr=aaGDPA;version->pfnGetPhysicalDeviceProcAddr=aaPhys;return VK_SUCCESS;}
+AA_EXPORT VkResult VKAPI_CALL aaNegotiate(VkNegotiateLayerInterface* version){if(!version || version->loaderLayerInterfaceVersion<2)return VK_ERROR_INITIALIZATION_FAILED;
+    try{(void)config();}catch(...){return VK_ERROR_INITIALIZATION_FAILED;}
+    version->loaderLayerInterfaceVersion=2;version->pfnGetInstanceProcAddr=aaGIPA;version->pfnGetDeviceProcAddr=aaGDPA;version->pfnGetPhysicalDeviceProcAddr=aaPhys;return VK_SUCCESS;}

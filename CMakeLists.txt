@@ -30,6 +30,11 @@ if(BUILD_TESTING)
   target_compile_features(descriptor_state_tests PRIVATE cxx_std_17)
   aa_warnings(descriptor_state_tests)
   add_test(NAME native-aa-descriptor-state COMMAND descriptor_state_tests)
+  add_executable(settings_tests tests/settings_tests.cpp)
+  target_include_directories(settings_tests PRIVATE include)
+  target_compile_features(settings_tests PRIVATE cxx_std_17)
+  aa_warnings(settings_tests)
+  add_test(NAME native-aa-settings COMMAND settings_tests)
 endif()
 
 option(NATIVE_AA_BUILD_VULKAN_TESTS "Build the offscreen SDR Vulkan prototype" OFF)
@@ -37,7 +42,7 @@ option(NATIVE_AA_GPU_VALIDATION "Require synchronization validation for GPU test
 if(NATIVE_AA_BUILD_VULKAN_TESTS)
   find_package(Vulkan 1.1 REQUIRED)
   find_program(GLSLANG_VALIDATOR NAMES glslangValidator glslang REQUIRED)
-  add_library(native_aa_vulkan STATIC src/vulkan/smaa_pipeline.cpp src/vulkan/compute_smaa_pipeline.cpp src/vulkan/camera_motion_pipeline.cpp)
+  add_library(native_aa_vulkan STATIC src/vulkan/smaa_pipeline.cpp src/vulkan/compute_smaa_pipeline.cpp src/vulkan/camera_motion_pipeline.cpp src/vulkan/temporal_resolve_pipeline.cpp)
   target_include_directories(native_aa_vulkan PUBLIC include)
   target_compile_features(native_aa_vulkan PUBLIC cxx_std_17)
   target_link_libraries(native_aa_vulkan PUBLIC Vulkan::Vulkan native_aa_core)
@@ -58,13 +63,38 @@ if(NATIVE_AA_BUILD_VULKAN_TESTS)
       list(APPEND aa_spirv "${output}")
     endforeach()
   endforeach()
+  foreach(quality RANGE 0 3)
+    foreach(pass RANGE 0 2)
+      set(output "${CMAKE_CURRENT_BINARY_DIR}/shaders/live-smaa-${quality}-${pass}.comp.spv")
+      add_custom_command(OUTPUT "${output}"
+        COMMAND ${CMAKE_COMMAND} -E make_directory "${CMAKE_CURRENT_BINARY_DIR}/shaders"
+        COMMAND "${GLSLANG_VALIDATOR}" -V --target-env vulkan1.1 "-DAA_PASS=${pass}" "-DAA_QUALITY=${quality}" -DAA_LIVE_CONTROLS=1
+          "-I${CMAKE_CURRENT_SOURCE_DIR}/third_party/smaa" "${CMAKE_CURRENT_SOURCE_DIR}/shaders/smaa.comp" -o "${output}"
+        DEPENDS shaders/smaa.comp third_party/smaa/SMAA.hlsl VERBATIM)
+      list(APPEND aa_spirv "${output}")
+    endforeach()
+  endforeach()
+  foreach(pass IN ITEMS 0 2)
+    set(output "${CMAKE_CURRENT_BINARY_DIR}/shaders/fxaa-${pass}.comp.spv")
+    add_custom_command(OUTPUT "${output}"
+      COMMAND ${CMAKE_COMMAND} -E make_directory "${CMAKE_CURRENT_BINARY_DIR}/shaders"
+      COMMAND "${GLSLANG_VALIDATOR}" -V --target-env vulkan1.1 "-DAA_PASS=${pass}"
+        "-I${CMAKE_CURRENT_SOURCE_DIR}/third_party/fxaa" "${CMAKE_CURRENT_SOURCE_DIR}/shaders/fxaa.comp" -o "${output}"
+      DEPENDS shaders/fxaa.comp third_party/fxaa/Fxaa3_11.h VERBATIM)
+    list(APPEND aa_spirv "${output}")
+  endforeach()
   set(motion_spirv "${CMAKE_CURRENT_BINARY_DIR}/shaders/camera-motion.comp.spv")
   add_custom_command(OUTPUT "${motion_spirv}"
     COMMAND ${CMAKE_COMMAND} -E make_directory "${CMAKE_CURRENT_BINARY_DIR}/shaders"
     COMMAND "${GLSLANG_VALIDATOR}" -V --target-env vulkan1.1
       "${CMAKE_CURRENT_SOURCE_DIR}/shaders/camera_motion.comp" -o "${motion_spirv}"
     DEPENDS shaders/camera_motion.comp VERBATIM)
-  add_custom_target(smaa_shaders DEPENDS ${aa_spirv} "${motion_spirv}")
+  set(temporal_spirv "${CMAKE_CURRENT_BINARY_DIR}/shaders/temporal-resolve.comp.spv")
+  add_custom_command(OUTPUT "${temporal_spirv}"
+    COMMAND ${CMAKE_COMMAND} -E make_directory "${CMAKE_CURRENT_BINARY_DIR}/shaders"
+    COMMAND "${GLSLANG_VALIDATOR}" -V --target-env vulkan1.1 "${CMAKE_CURRENT_SOURCE_DIR}/shaders/temporal_resolve.comp" -o "${temporal_spirv}"
+    DEPENDS shaders/temporal_resolve.comp VERBATIM)
+  add_custom_target(smaa_shaders DEPENDS ${aa_spirv} "${motion_spirv}" "${temporal_spirv}")
   add_dependencies(native_aa_vulkan smaa_shaders)
   if(BUILD_TESTING)
     add_executable(smaa_vulkan_tests tests/smaa_vulkan_tests.cpp)
@@ -83,5 +113,23 @@ if(NATIVE_AA_BUILD_VULKAN_TESTS)
       --shaders "${CMAKE_CURRENT_BINARY_DIR}/shaders"
       --output "${CMAKE_CURRENT_BINARY_DIR}/gpu-evidence" ${validation})
     set_tests_properties(native-aa-vulkan-synthetic PROPERTIES TIMEOUT 120)
+    add_executable(live_quality_gpu_tests tests/live_quality_gpu_tests.cpp)
+    target_include_directories(live_quality_gpu_tests PRIVATE third_party/smaa)
+    target_link_libraries(live_quality_gpu_tests PRIVATE native_aa_vulkan)
+    aa_warnings(live_quality_gpu_tests)
+    if(NOT MSVC)
+      target_compile_options(live_quality_gpu_tests PRIVATE -Wno-missing-field-initializers)
+    endif()
+    add_test(NAME native-aa-live-quality COMMAND live_quality_gpu_tests "${CMAKE_CURRENT_BINARY_DIR}/shaders")
+    set_tests_properties(native-aa-live-quality PROPERTIES TIMEOUT 120)
+    add_executable(temporal_resolve_gpu_tests tests/temporal_resolve_gpu_tests.cpp)
+    target_include_directories(temporal_resolve_gpu_tests PRIVATE third_party/smaa)
+    target_link_libraries(temporal_resolve_gpu_tests PRIVATE native_aa_vulkan)
+    aa_warnings(temporal_resolve_gpu_tests)
+    if(NOT MSVC)
+      target_compile_options(temporal_resolve_gpu_tests PRIVATE -Wno-missing-field-initializers)
+    endif()
+    add_test(NAME native-aa-temporal-resolve COMMAND temporal_resolve_gpu_tests "${temporal_spirv}")
+    set_tests_properties(native-aa-temporal-resolve PROPERTIES TIMEOUT 120)
   endif()
 endif()

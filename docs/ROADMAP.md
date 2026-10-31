@@ -32,8 +32,9 @@ in [live-test evidence](LIVE-TEST.md); this remains a developer experiment.
    Bypass when ambiguous instead of guessing another image.
 3. Add bounded scratch resources, barriers, completion ownership, HDR-aware
    handling, resize/minimize/device-loss recovery and clean unload.
-4. Add the in-sim menu, On/Off comparison, quality controls, selected-state/help
-   feedback, saved choices and fresh current-session activity diagnostics.
+4. In-sim menu, live On/Off, four SMAA presets, FXAA, blend/subpixel controls,
+   selected-state/help feedback, atomic saved choices and current-session
+   completion diagnostics are implemented on the Windows development branch.
 5. Measure matched flights, text preservation, shimmer and memory/frame times
    against native Off/MSAA settings. Keep performance claims tied to evidence.
 
@@ -54,8 +55,9 @@ CPU code passing on both architectures does not complete this workstream.
 The owner's motion-vector/TAA follow-up is now isolated on
 `experimental/temporal-aa`, based on the SMAA prototype. Original camera/depth
 GPU vectors, convention normalization and history gates are implemented and
-tested offscreen. TAA/SMAA T2x resolve, verified simulator jitter, per-object/cloud
-motion and live provider interoperation remain pending. See
+tested offscreen. An original TAA resolve has also passed GPU/reference checks;
+verified simulator jitter, per-object/cloud motion, SMAA T2x sampling and live
+provider interoperation remain pending. See
 [the research and integration plan](MOTION-AND-TEMPORAL-AA.md).
 
 No dates, GPU support guarantees or installable rendering release are promised

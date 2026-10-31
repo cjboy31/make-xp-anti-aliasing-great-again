@@ -319,8 +319,9 @@ struct Fixture {
 
 struct ComputeFixture {
     Context& c; Buffer staging; Image source,edges,weights,output,area,search;
+    bool fxaa=false;
     native_aa::ComputeSmaaPipeline pipeline;
-    ComputeFixture(Context& context,VkExtent2D extent,const std::filesystem::path& shaders)
+    ComputeFixture(Context& context,VkExtent2D extent,const std::filesystem::path& shaders,VkBuffer controls=VK_NULL_HANDLE,unsigned variant=2)
         :c(context),staging(c,std::max<std::uint64_t>(AREATEX_SIZE,std::uint64_t{extent.width}*extent.height*4)),
          source(c,extent,VK_FORMAT_R8G8B8A8_UNORM,4,false,true),
          edges(c,extent,VK_FORMAT_R8G8B8A8_UNORM,4,false,false,true),
@@ -328,7 +329,7 @@ struct ComputeFixture {
          output(c,extent,VK_FORMAT_R8G8B8A8_UNORM,4,false,false,true),
          area(c,{AREATEX_WIDTH,AREATEX_HEIGHT},VK_FORMAT_R8G8_UNORM,2,false),
          search(c,{SEARCHTEX_WIDTH,SEARCHTEX_HEIGHT},VK_FORMAT_R8_UNORM,1,false),
-         pipeline(c.device,extent,{source.view,source.srgb,area.view,search.view,edges.view,weights.view,output.view},shaders) {
+         fxaa(controls && variant==4),pipeline(c.device,extent,{source.view,source.srgb,area.view,search.view,edges.view,weights.view,output.view},shaders,controls,variant) {
         area.upload(staging,areaTexBytes,sizeof(areaTexBytes)); search.upload(staging,searchTexBytes,sizeof(searchTexBytes));
     }
     std::vector<unsigned char> render(const std::vector<unsigned char>& pixels) {
@@ -336,6 +337,7 @@ struct ComputeFixture {
         c.submit([&](auto cb){
             const std::array<Image*,3> targets{&edges,&weights,&output};
             for(unsigned i=0;i<3;++i) {
+                if(fxaa && i==1)continue;
                 targets[i]->transition(cb,VK_IMAGE_LAYOUT_GENERAL); pipeline.record_pass(cb,i);
                 targets[i]->transition(cb,VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
             }

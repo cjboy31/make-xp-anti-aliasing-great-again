@@ -4,6 +4,7 @@
 #include "smaa_vulkan_tests.cpp"
 #undef main
 #include <cstdlib>
+#include "native_aa/live_channel_win.hpp"
 
 namespace {
 VkShaderModule module(Context& c,const std::filesystem::path& path) {
@@ -170,7 +171,27 @@ int main(int argc,char** argv) {
             name(c,scene.handle,"UI");need(program.render(scene,staging)==baseline,"UI image was modified");name(c,scene.handle,"LDR");
             mode("OFF");need(program.render(scene,staging)==baseline,"Live bypass does not retain native image");
         }
+        if(!bypass){
+            const VkExtent2D extent{257,145};
+            Image scene(c,extent,VK_FORMAT_R8G8B8A8_SRGB,4,true),hdr(c,extent,VK_FORMAT_R16G16B16A16_SFLOAT,8,true);
+            Buffer staging(c,std::uint64_t(extent.width)*extent.height*4),controls(c,16,VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT);
+            name(c,scene.handle,"LDR");name(c,hdr.handle,"HDR");NativeProgram program(c,extent,shaders);
+            mode("OFF");const auto baseline=program.render(scene,staging);
+            native_aa::LiveChannel ui;need(ui.open(),"Open UI channel");
+            for(unsigned variant=0;variant<5;++variant)for(unsigned strength:{25U,100U}){
+                native_aa::Settings selection{true,variant==4?native_aa::Method::fxaa:native_aa::Method::smaa,variant==4?2:variant,strength,75};
+                need(ui.write_controls(selection)!=0,"Publish UI selection");
+                const std::array<float,4> values{strength/100.0f,0.75f,0,0};std::memcpy(controls.mapped,values.data(),16);controls.sync(true);
+                std::vector<unsigned char> expected;
+                {ComputeFixture reference(c,extent,shaders,controls.handle,variant);expected=reference.render(baseline);}
+                const auto result=program.render(scene,staging);need(result==expected,"Live method/quality/strength selection differs from GPU reference");alpha_equal(baseline,result);
+            }
+            native_aa::Settings off;off.enabled=false;ui.write_controls(off);
+            need(program.render(scene,staging)==baseline,"UI Off must retain native image");
+            off.enabled=true;off.strength=0;ui.write_controls(off);
+            need(program.render(scene,staging)==baseline,"Zero strength must retain native image");
+        }
         need(c.allocated_bytes==0,"Native fixture retained allocations");c.close();need(c.errors==0,"Layer validation errors");need(c.warnings==0,"Layer validation warnings");
-        std::cout<<"Native scene layer PASS: "<<(bypass?"failure bypass":"36 injected frames through 4K including 12 two-queue stage-scoped handoffs, 2 resizes, state restoration, UI bypass and live On/Off")<<", zero validation messages.\n";return 0;
+        std::cout<<"Native scene layer PASS: "<<(bypass?"failure bypass":"46 injected frames, including 10 live method/quality/strength cases, 12 two-queue handoffs, 2 resizes, state restoration, UI bypass and live On/Off")<<", zero validation messages.\n";return 0;
     }catch(const std::exception& e){std::cerr<<"Native scene layer FAIL: "<<e.what()<<'\n';return 1;}
 }

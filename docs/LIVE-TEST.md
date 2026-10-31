@@ -109,15 +109,18 @@ Vulkan environment variables.
 The layer additionally requires an exact `NATIVE_AA_EXE` match,
 `NATIVE_AA_LIVE_TEST=1`, `DISABLE_XPFSR24=1`, a shader folder, a writable log path,
 and a control file containing `ON`. Setting that file to `OFF` bypasses future
-scene recordings without restarting. This is a developer comparison control,
-not a finished user interface. Do not advertise it as one.
+scene recordings without restarting. That file is a developer comparison
+control. The new independent in-sim panel instead uses a versioned process-local
+channel and saves validated choices; see [the controls guide](CONTROLS.md).
 
 The owner's harness backs up simulator preferences, temporarily selects full
 native input scale, and restores that one setting after a normal simulator exit
 without overwriting other simulator edits. That private harness, captures and
-saved preferences are excluded from publication. A public installer must still
-implement deliberate setup, current-state feedback, conflict checks, update/
-removal and activation for ordinary/third-party launchers.
+saved preferences are excluded from publication. The development installer now
+checks build/test/source hashes, installs the original XPLM panel and shader
+variants, preserves other registry values, uses hash-named DLLs and can enable
+selective ordinary-launch discovery. This is not a packaged end-user release or
+a claim that every third-party launcher has been tested.
 
 Before release, test real cockpit and external camera movement, text, thin
 geometry, night lighting/clouds, texture detail, frame-time distributions,
@@ -125,3 +128,40 @@ minimize/resize, resource pressure and restart/removal. HDR10/scRGB, VR,
 multiple windows, other X-Plane versions, Intel/NVIDIA and native Linux/Metal
 remain separate validation gates. Camera-only motion research is not connected
 to this spatial filter and is not a substitute for full object/cloud velocity.
+
+## Live controls / FXAA update
+
+The 2026-10-31 R9700 session exercised live SMAA/FXAA switching, On/Off,
+quality selection, blend dragging, FXAA subpixel selection, save feedback and
+restoring defaults. It confirmed 70,379 GPU-completed AA recordings and normal
+process exit code 0, with an empty observed-exception log. The tracked scene
+scratch allocation stayed at 134,095,888 bytes (about 128 MiB), including private
+control constants. This is a stationary ground/cockpit session, not a full-flight
+stress test, peak process VRAM measurement or per-method performance benchmark.
+
+The native adapter fixture also checks ten live quality/method/strength cases
+against a separate compute readback, plus UI-channel Off and zero-strength
+identity. A separate 60-readback GPU fixture covers all four SMAA presets and
+FXAA, feedback endpoints, flat red/blue colors and alpha; all synthetic diagonal
+cases improved against the supersampled reference. Runtime validation passed
+without standard or synchronization messages. The concurrent IPC fixture
+performed 50,000 coherent settings/status updates; portable tests cover bounded
+settings parsing and roundtrip persistence.
+
+Activation tests now use the same Windows manifest generator as installation.
+They cover an unrelated Vulkan executable, the exact selected simulator,
+environment opt-out, disabled installation and an existing FSR startup claim.
+The real ordinary-launch test caught a Unix-style relative DLL path rejected
+by the Windows loader with error 87 before our adapter was entered. The path
+was corrected to native separators and unrelated-application/activation checks
+were rerun. A subsequent real X-Plane launch loaded the installed layer without
+private injection environment variables, restored the saved Off/Ultra state,
+and started processing when enabled in the panel. Wheel input over the panel
+left the read-only simulator FOV at the same 100 degrees.
+
+Twelve untouched native 4K screenshots were captured privately at the owner's
+request: AA Off plus SMAA Low/Medium/High/Ultra and FXAA, in matching paused
+cockpit/external views. MSAA 2x was retained and FSR/NR/FG bypassed. Runtime
+selection acknowledgments and completion progression were recorded for each
+capture. Files are deliberately excluded from the source/installation package.
+They do not establish temporal stability or constitute TAA screenshots.

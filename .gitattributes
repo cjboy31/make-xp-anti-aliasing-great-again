@@ -2,3 +2,5 @@
 third_party/smaa/SMAA.hlsl -text
 third_party/smaa/LICENSE.txt -text
 third_party/smaa/Textures/*.h -text
+third_party/fxaa/* -text
+third_party/XPLM-SDK-license.txt -text

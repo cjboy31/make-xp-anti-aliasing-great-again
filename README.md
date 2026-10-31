@@ -4,16 +4,22 @@ Independent, native-resolution anti-aliasing research for X-Plane 12.
 The goal is a lightweight in-sim plugin for people who want smoother edges
 without FSR, upscaling, neural rendering or frame generation.
 
-**Developer prototype; no installable AA plugin or rendering release.**
+**Windows development build; no packaged end-user rendering release yet.**
 The offscreen Vulkan SMAA recorder has synthetic and private captured-scene
 checks. A separate, explicitly enabled Windows scene adapter is undergoing
 live testing against a captured X-Plane 12.4.4 SDR path. Unsupported paths
 remain unchanged. See [live-test scope](docs/LIVE-TEST.md) and
 [offscreen reproduction](docs/SMAA-PROTOTYPE.md).
 
-The temporal-AA experiment adds original GPU camera/depth reprojection, motion
-convention normalization and history reset gates. It does **not** yet accumulate
-TAA history or consume a live simulator motion buffer. See
+The current branch adds an original in-sim control panel, saved live SMAA
+quality/blend controls, an independent FXAA 3.11 alternative and fresh
+GPU-completion status. Open **Plugins > Native AA > Open AA controls** after
+installing the checked developer build; see [controls and setup](docs/CONTROLS.md).
+
+The temporal-AA experiment now includes an original, offscreen GPU temporal
+resolve with reprojection, depth/reactive rejection, neighborhood clipping and
+history-reset gates. It does **not** yet consume verified live simulator
+motion/jitter inputs, so TAA is unavailable in the live panel. See
 [motion research and AA alternatives](docs/MOTION-AND-TEMPORAL-AA.md).
 
 ## Direction
@@ -73,7 +79,7 @@ must not silently rewrite the other plugin's preferences.
 
 [Community Discord](https://discord.gg/yh396QNgHZ)
 
-Original code is MIT licensed. The pinned MIT SMAA shader/lookup-table sources
-retain their upstream notices. No SDK runtime, model, simulator asset or user
+Original code is MIT licensed. Pinned SMAA (MIT) and FXAA (BSD/Apache notices)
+sources retain their upstream licenses. No SDK runtime, model, simulator asset or user
 configuration is bundled. See
 [dependency research and notices](THIRD_PARTY.md).

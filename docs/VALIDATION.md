@@ -6,7 +6,7 @@
 | Offscreen AA shader/reference image | R9700 synthetic validation passed | Lavapipe validation CI configured; see Actions | Not implemented |
 | Independent native X-Plane scene/UI access | Private 12.4.4 SDR capture and opt-in adapter; release gates open | Not validated | Not established |
 | Real flight quality/timing/memory | Short ground On/Off samples; longer flight/cockpit/panning checks pending | Not tested | Not tested |
-| Install/update/removal package | Not available | Not available | Not available |
+| Install/update/removal package | Hash-checked development script / owned-file cleanup tests; no packaged release | Not available | Not available |
 
 For every claimed backend, record simulator version, driver, actual input/output
 scale, graphics settings and test-scene conditions. Compare stationary and moving

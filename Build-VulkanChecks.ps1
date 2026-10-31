@@ -17,6 +17,16 @@ foreach ($aaPass in 0..2) {
         if ($LASTEXITCODE -ne 0) { throw 'SMAA shader compilation failed' }
     }
 }
+foreach ($quality in 0..3) {
+    foreach ($aaPass in 0..2) {
+        & $glsl -V --target-env vulkan1.1 ('-DAA_PASS='+$aaPass) ('-DAA_QUALITY='+$quality) '-DAA_LIVE_CONTROLS=1' ('-I'+(Join-Path $PSScriptRoot 'third_party/smaa')) (Join-Path $PSScriptRoot 'shaders/smaa.comp') -o (Join-Path $shaders ('live-smaa-'+$quality+'-'+$aaPass+'.comp.spv'))
+        if ($LASTEXITCODE -ne 0) { throw 'Live SMAA quality shader compilation failed' }
+    }
+}
+foreach ($aaPass in @(0,2)) {
+    & $glsl -V --target-env vulkan1.1 ('-DAA_PASS='+$aaPass) ('-I'+(Join-Path $PSScriptRoot 'third_party/fxaa')) (Join-Path $PSScriptRoot 'shaders/fxaa.comp') -o (Join-Path $shaders ('fxaa-'+$aaPass+'.comp.spv'))
+    if ($LASTEXITCODE -ne 0) { throw 'FXAA shader compilation failed' }
+}
 & $glsl -V --target-env vulkan1.1 (Join-Path $PSScriptRoot 'shaders/camera_motion.comp') -o (Join-Path $shaders 'camera-motion.comp.spv')
 if ($LASTEXITCODE -ne 0) { throw 'Camera motion shader compilation failed' }
 $exports = & (Join-Path $compilerBin 'llvm-readobj.exe') --coff-exports (Join-Path $env:WINDIR 'System32/vulkan-1.dll')

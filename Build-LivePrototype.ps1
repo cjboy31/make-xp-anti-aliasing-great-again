@@ -19,6 +19,8 @@ $manifest=[ordered]@{
 }
 [IO.File]::WriteAllText((Join-Path $out 'native-aa-live.json'),($manifest|ConvertTo-Json -Depth 6),[Text.UTF8Encoding]::new($false))
 $inputs=@('src/vulkan/live_layer_win.cpp','src/vulkan/compute_smaa_pipeline.cpp','src/vulkan/live_dispatch.hpp','src/vulkan/live_pipeline_dispatch.hpp','include/native_aa/compute_smaa_pipeline.hpp','include/native_aa/descriptor_state.hpp','third_party/smaa/Textures/AreaTex.h','third_party/smaa/Textures/SearchTex.h','shaders/smaa.comp','build/vulkan/shaders/smaa-0.comp.spv','build/vulkan/shaders/smaa-1.comp.spv','build/vulkan/shaders/smaa-2.comp.spv')
+$inputs+=@('include/native_aa/settings.hpp','include/native_aa/live_channel_win.hpp','shaders/fxaa.comp','third_party/fxaa/Fxaa3_11.h')
+$inputs+=@(Get-ChildItem -LiteralPath (Join-Path $PSScriptRoot 'build/vulkan/shaders') -File | Where-Object {$_.Name -match '^(live-smaa-|fxaa-).*\.spv$'} | ForEach-Object {'build/vulkan/shaders/'+$_.Name})
 $hashes=@($inputs|ForEach-Object{[ordered]@{path=$_;sha256=(Get-FileHash -LiteralPath (Join-Path $PSScriptRoot $_) -Algorithm SHA256).Hash}})
 $receipt=[ordered]@{status='PASS';dllSHA256=(Get-FileHash -LiteralPath (Join-Path $out 'native-aa-live.dll') -Algorithm SHA256).Hash;inputs=$hashes;builtUtc=[DateTime]::UtcNow.ToString('o')}
 [IO.File]::WriteAllText((Join-Path $out 'build-receipt.json'),($receipt|ConvertTo-Json -Depth 5),[Text.UTF8Encoding]::new($false))

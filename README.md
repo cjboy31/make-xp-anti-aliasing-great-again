@@ -1,3 +1,5 @@
+<img src="assets/branding/aa-icon-128.png" alt="Make XP Anti-Aliasing Great Again icon" width="96" height="96">
+
 # Make XP Anti-Aliasing Great Again
 
 Independent, native-resolution anti-aliasing research for X-Plane 12.

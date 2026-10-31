@@ -1,4 +1,4 @@
-MAKE XP ANTI-ALIASING GREAT AGAIN — 0.3.1-alpha
+MAKE XP ANTI-ALIASING GREAT AGAIN — 0.3.2-alpha
 Windows x64 alpha for X-Plane 12.4.4 / Vulkan
 
 INSTALL

@@ -11,7 +11,7 @@ using System.Windows.Forms;
 using Microsoft.Win32;
 
 internal static class NativeAASetup {
-    const string Version = "0.3.1-alpha";
+    const string Version = "0.3.2-alpha";
     const string LayerKey = @"Software\Khronos\Vulkan\ImplicitLayers";
     static readonly JavaScriptSerializer Json = new JavaScriptSerializer { MaxJsonLength = 8000000 };
     static readonly UTF8Encoding Utf8 = new UTF8Encoding(false);

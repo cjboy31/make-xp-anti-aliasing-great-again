@@ -3,6 +3,10 @@
 Open **Plugins > Native AA > Open AA controls**. Choices save automatically.
 Use **?** beside a choice for help. **Changelog** shows what changed.
 
+The status strip shows what the renderer is doing now. After a change, wait for
+the renderer to receive the selection and finish a new frame. When the renderer
+is connected, the footer shows scene size, finished frames and mod GPU memory.
+
 ## Start here
 
 Set X-Plane's input scale to **Off / Full**. Keep your normal output resolution
@@ -23,8 +27,9 @@ Try **SMAA High** first. Use the **On/Off** button to compare the same view.
 - **Reset TAA history:** clear old pictures if an old image remains after a view change.
 
 AA settings work while you fly. **Renderer** chooses Native AA, FSR or the
-original simulator for the next launch. Close and reopen X-Plane after changing
-it. Only one mod processes the picture. Both keep your saved choices.
+original simulator for the next launch. Close and reopen X-Plane to switch.
+Older Automatic choices still work. The panel shows which renderer that choice
+will select. Both mods keep your saved choices.
 
 The status should say **AA ACTIVE** or **TAA ACTIVE** after loading a supported
 flight. A selected button alone does not mean it is working. Read any waiting

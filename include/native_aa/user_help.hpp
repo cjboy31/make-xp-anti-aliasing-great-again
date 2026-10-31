@@ -30,6 +30,13 @@ inline const char* option_help(int action) {
     }
 }
 inline const char* changelog_text() {
-    return "What's new in 0.3.1\n? help explains each choice and suggests a starting point.\nRead changes here instead of watching a startup video.\nThe optional shadow script is installed separately with FlyWithLua.\nTAA + SMAA / FXAA, motion matching and shimmer controls are retained.\nRenderer chooses one mod for your next launch and keeps your settings.\nLinux is a beta; Mac rendering is not available.\nTAA is experimental. Some flickering edges and moving trails may remain.";
+    return "#Version 0.3.2 - Panel refresh\n"
+        "The panel groups AA methods, motion settings and next-launch choices in four tabs.\n"
+        "The status strip shows what the renderer is doing. The footer shows fresh session counts.\n"
+        "Use ? for setting help. Choose On or Off to compare the same view.\n\n"
+        "#Version 0.3.1\n"
+        "TAA + SMAA, TAA + FXAA, image matching and shimmer controls are available.\n"
+        "The optional shadow script installs separately with FlyWithLua.\n"
+        "Linux is a beta. Mac rendering is unavailable. TAA remains experimental.";
 }
 }

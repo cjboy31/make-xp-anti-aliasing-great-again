@@ -8,7 +8,7 @@ from pathlib import Path
 import sys
 import uuid
 
-VERSION = '0.3.0-linux-beta.1'
+VERSION = '0.3.1-linux-beta.1'
 PACKAGE = Path(__file__).resolve().parent
 
 

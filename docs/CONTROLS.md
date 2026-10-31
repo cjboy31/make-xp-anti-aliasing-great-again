@@ -1,5 +1,8 @@
 # Native AA - in-sim controls (Windows alpha / Linux beta)
 
+Every setting has a **?** button explaining what it does. Open **Changelog** to read changes. The optional shadow script is separate; see [its instructions](../extras/shadows/README.txt).
+
+
 Open **Plugins > Native AA > Open AA controls**. Enable or disable processing
 with the ON/OFF button. Changes apply live and save automatically to
 `Output/preferences/NativeAA.ini` in this simulator installation.

@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.20)
-project(xplane_native_aa VERSION 0.3.0 LANGUAGES CXX)
+project(xplane_native_aa VERSION 0.3.1 LANGUAGES CXX)
 
 add_library(native_aa_core STATIC src/frame_contract.cpp src/motion.cpp)
 target_include_directories(native_aa_core PUBLIC include)

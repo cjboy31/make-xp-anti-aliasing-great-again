@@ -1,4 +1,4 @@
-MAKE XP ANTI-ALIASING GREAT AGAIN - 0.3.0-alpha
+MAKE XP ANTI-ALIASING GREAT AGAIN - 0.3.1-alpha
 Windows x64 / X-Plane 12 / Vulkan
 
 WHAT IT DOES
@@ -101,3 +101,9 @@ save automatically. Start with camera/depth motion and 50% stabilization. These
 are estimates, not native object/cloud vectors. Refinement costs GPU time and
 finishing can soften detail; use On/Off in the same view. Return diagnostics to
 Scene image for normal rendering. See docs/MOTION-SHIMMER-COMBINATIONS.md.
+
+SETTING HELP AND CHANGES
+Each setting has a ? button explaining what it does and when to use it.
+Open Changelog in the panel to read changes. No startup video is needed.
+An optional shadow script and its own instructions are in extras/shadows.
+It starts Off and is installed separately with FlyWithLua NG.

@@ -12,7 +12,7 @@ jobs:
           persist-credentials: false
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
       - name: Install Linux build and offscreen validation dependencies
-        run: sudo apt-get update && sudo apt-get install -y cmake ninja-build g++ libvulkan-dev glslang-tools mesa-vulkan-drivers vulkan-validationlayers libssl-dev libgl-dev
+        run: sudo apt-get update && sudo apt-get install -y cmake ninja-build g++ libvulkan-dev glslang-tools mesa-vulkan-drivers vulkan-validationlayers libssl-dev libgl-dev lua5.1
       - name: Fetch pinned build-only Vulkan headers and official X-Plane SDK
         run: |
           curl --fail --location --retry 2 https://github.com/KhronosGroup/Vulkan-Headers/archive/d4a196d8c84e032d27f999adcea3075517c1c97f.tar.gz -o /tmp/vulkan-headers.tar.gz
@@ -23,6 +23,7 @@ jobs:
           unzip -q /tmp/XPSDK430.zip -d /tmp/aa-xplane-sdk
       - name: Build native layer, plugin and regression fixtures
         run: |
+          lua5.1 tests/shadow_script_tests.lua "extras/shadows/make XP shadows great again - enhanced edition.lua"
           python3 tools/verify_vendor.py
           cmake -S . -B build-linux -G Ninja -DCMAKE_BUILD_TYPE=Release -DNATIVE_AA_BUILD_VULKAN_TESTS=ON -DNATIVE_AA_BUILD_LINUX_LAYER=ON -DNATIVE_AA_BUILD_LINUX_PLUGIN=ON -DNATIVE_AA_XPLANE_SDK=/tmp/aa-xplane-sdk/SDK -DVulkan_INCLUDE_DIR=/tmp/aa-vulkan-headers/include
           cmake --build build-linux --parallel 2
@@ -62,7 +63,7 @@ jobs:
         run: |
           export VK_ICD_FILENAMES="$(find /usr/share/vulkan/icd.d -name '*lvp*.json' -print -quit)"
           python3 tools/package_linux.py build-linux dist-linux
-          python3 tools/test_linux_package.py dist-linux/Make-XP-AA-0.3.0-linux-beta.1-Linux-x86_64.tar.gz build-linux/native_aa_activation_probe
+          python3 tools/test_linux_package.py dist-linux/Make-XP-AA-0.3.1-linux-beta.1-Linux-x86_64.tar.gz build-linux/native_aa_activation_probe
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: Native-AA-Linux-beta-package

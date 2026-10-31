@@ -94,7 +94,8 @@ struct NativeProgram {
             vkCmdPipelineBarrier(cb,VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,VK_PIPELINE_STAGE_HOST_BIT,0,0,nullptr,1,&barrier,0,nullptr);
     }
     void verify() {
-        result.sync(false);std::uint32_t value{};std::memcpy(&value,result.mapped,4);need(value==317,"Native compute state was disturbed by AA");
+        result.sync(false);std::uint32_t value{};std::memcpy(&value,result.mapped,4);
+        if(value!=317)throw std::runtime_error("Native compute state was disturbed by AA: value="+std::to_string(value)+" expected=317 dynamic_offset="+std::to_string(offset));
     }
     std::vector<unsigned char> render(Image& image,Buffer& staging) {
         std::memset(result.mapped,0,16);result.sync(true);

@@ -1,0 +1,23 @@
+#version 450
+layout(local_size_x=8,local_size_y=8) in;
+#ifdef DEPTH_MSAA
+layout(set=0,binding=0) uniform sampler2DMS sourceDepth;
+#else
+layout(set=0,binding=0) uniform sampler2D sourceDepth;
+#endif
+layout(set=0,binding=1,r32f) writeonly uniform image2D capturedDepth;
+void main() {
+    ivec2 xy=ivec2(gl_GlobalInvocationID.xy),size=imageSize(capturedDepth);
+    if(any(greaterThanEqual(xy,size)))return;
+    float depth=0;
+#ifdef DEPTH_MSAA
+    for(int sampleIndex=0;sampleIndex<textureSamples(sourceDepth);++sampleIndex) {
+        float z=texelFetch(sourceDepth,xy,sampleIndex).r;
+        if(!isnan(z)&&!isinf(z)&&z>=0&&z<=1)depth=max(depth,z);
+    }
+#else
+    float z=texelFetch(sourceDepth,xy,0).r;
+    if(!isnan(z)&&!isinf(z)&&z>=0&&z<=1)depth=z;
+#endif
+    imageStore(capturedDepth,xy,vec4(depth));
+}

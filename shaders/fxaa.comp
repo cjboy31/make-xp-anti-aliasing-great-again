@@ -1,0 +1,33 @@
+#version 450
+#extension GL_GOOGLE_include_directive : require
+// Original compute transport for the pinned BSD-3-Clause FXAA 3.11 header.
+// Native encoded RGB + perceptual luma avoids GREEN_AS_LUMA's red/blue blind spot.
+layout(local_size_x=8,local_size_y=8) in;
+layout(constant_id=0) const float frameWidth=1.0;
+layout(constant_id=1) const float frameHeight=1.0;
+layout(set=0,binding=0) uniform sampler2D first;
+layout(set=0,binding=1) uniform sampler2D second;
+layout(set=0,binding=2) uniform sampler2D third;
+layout(rgba8,set=0,binding=3) writeonly uniform image2D target;
+layout(std140,set=0,binding=4) uniform LiveControls { vec4 control; };
+#if AA_PASS == 2
+#define FXAA_PC 1
+#define FXAA_GLSL_130 1
+#define FXAA_QUALITY__PRESET 29
+#define FXAA_GREEN_AS_LUMA 0
+#define FXAA_GATHER4_ALPHA 0
+#include "Fxaa3_11.h"
+#endif
+void main(){
+    ivec2 p=ivec2(gl_GlobalInvocationID.xy);
+    if(any(greaterThanEqual(p,ivec2(frameWidth,frameHeight))))return;
+    vec4 original=texelFetch(third,p,0);
+#if AA_PASS == 0
+    imageStore(target,p,vec4(original.rgb,dot(original.rgb,vec3(0.299,0.587,0.114))));
+#else
+    vec2 reciprocal=1.0/vec2(frameWidth,frameHeight);
+    vec3 filtered=FxaaPixelShader((vec2(p)+0.5)*reciprocal,vec4(0),second,second,second,second,
+        reciprocal,vec4(0),vec4(0),vec4(0),control.y,0.166,0.0833,0.0,0.0,0.0,vec4(0)).rgb;
+    imageStore(target,p,vec4(mix(original.rgb,filtered,control.x),original.a));
+#endif
+}

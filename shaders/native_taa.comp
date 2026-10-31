@@ -1,0 +1,75 @@
+#version 450
+// Original camera/depth TAA. Resolved history is an unjittered native grid.
+// No FSR, vendor runtime, learned model, native object-velocity claim or UI AA.
+layout(local_size_x=8,local_size_y=8) in;
+layout(constant_id=0) const bool forceReset=false;
+layout(set=0,binding=0,std140) uniform Params {
+    mat4 reprojection,bodyReprojection,inverseProjection;
+    vec4 sizeJitter,previousJitter,feedback;
+} p;
+layout(set=0,binding=1) uniform sampler2D currentColor;
+layout(set=0,binding=2) uniform sampler2D historyColor;
+layout(set=0,binding=3) uniform sampler2D previousRaw;
+layout(set=0,binding=4) uniform sampler2D currentDepth;
+layout(set=0,binding=5) uniform sampler2D previousDepth;
+layout(set=0,binding=6,rgba8) writeonly uniform image2D outputColor;
+bool finite1(float v) { return !isnan(v)&&!isinf(v); }
+bool finite3(vec3 v) { return !any(isnan(v))&&!any(isinf(v)); }
+vec3 yc(vec3 c) { return vec3(dot(c,vec3(.25,.5,.25)),(c.r-c.b)*.5,(-c.r+2*c.g-c.b)*.25); }
+vec3 rgb(vec3 c) { return vec3(c.x+c.y-c.z,c.x+c.z,c.x-c.y-c.z); }
+vec3 encode(vec3 c) {
+    c=clamp(c,0,1);
+    return mix(1.055*pow(c,vec3(1.0/2.4))-.055,c*12.92,lessThanEqual(c,vec3(.0031308)));
+}
+void main() {
+    ivec2 xy=ivec2(gl_GlobalInvocationID.xy),size=imageSize(outputColor);
+    if(any(greaterThanEqual(xy,size)))return;
+    vec2 uv=(vec2(xy)+.5)/vec2(size);
+    float depth=texelFetch(currentDepth,xy,0).r;
+    bool geometry=finite1(depth)&&depth>1e-7&&depth<=1;
+    // Sky/cloud passes do not receive geometry viewport jitter. Do not shift
+    // or accumulate their unknown motion just because geometry has a depth.
+    vec2 sampleUv=uv+(geometry?p.sizeJitter.zw/vec2(size):vec2(0));
+    vec4 original=texelFetch(currentColor,xy,0);
+    vec3 current=textureLod(currentColor,sampleUv,0).rgb;
+    vec3 result=current;
+    if(!forceReset&&p.feedback.w<.5&&geometry&&p.feedback.x>0) {
+        vec4 clip=vec4(uv*2-1,depth,1);clip.y*=p.previousJitter.z;
+        vec4 eye=p.inverseProjection*clip;
+        bool cabin=p.previousJitter.w>.5&&finite1(eye.w)&&dot(eye.xyz,eye.xyz)<9*eye.w*eye.w;
+        vec4 old=(cabin?p.bodyReprojection:p.reprojection)*clip;
+        bool valid=finite1(old.w)&&old.w>1e-7&&!any(isnan(old))&&!any(isinf(old));
+        vec2 oldUv=valid?old.xy/old.w:vec2(-1);oldUv.y*=p.previousJitter.z;oldUv=oldUv*.5+.5;
+        vec2 oldRawUv=oldUv+p.previousJitter.xy/vec2(size);
+        float speed=length((oldUv-uv)*vec2(size));
+        valid=valid&&speed<128&&all(greaterThanEqual(oldUv,.5/vec2(size)))&&all(lessThanEqual(oldUv,1-.5/vec2(size)))&&
+            all(greaterThanEqual(oldRawUv,.5/vec2(size)))&&all(lessThanEqual(oldRawUv,1-.5/vec2(size)));
+        if(valid) {
+            float oldDepth=textureLod(previousDepth,oldRawUv,0).r;
+            float predicted=old.z/old.w;
+            valid=finite1(oldDepth)&&oldDepth>1e-7&&finite1(predicted)&&predicted>0&&predicted<=1&&
+                abs(oldDepth-predicted)<=max(2e-6,p.feedback.z*max(oldDepth,predicted));
+        }
+        if(valid) {
+            vec3 low=vec3(1e10),high=vec3(-1e10),mean=vec3(0),square=vec3(0);
+            for(int y=-1;y<=1;++y)for(int x=-1;x<=1;++x) {
+                vec3 color=yc(textureLod(currentColor,sampleUv+vec2(x,y)/vec2(size),0).rgb);
+                low=min(low,color);high=max(high,color);mean+=color/9;square+=color*color/9;
+            }
+            vec3 sigma=sqrt(max(vec3(0),square-mean*mean));
+            low=max(low,mean-1.5*sigma);high=min(high,mean+1.5*sigma);
+            vec3 oldRaw=textureLod(previousRaw,oldRawUv,0).rgb;
+            vec3 oldColor=textureLod(historyColor,oldUv,0).rgb;
+            float residual=max(max(abs(current.r-oldRaw.r),abs(current.g-oldRaw.g)),abs(current.b-oldRaw.b));
+            // A residual is evidence against camera-only motion, not proof of
+            // an object vector. Prefer a fresh sample for displays/reflections.
+            float confidence=1-smoothstep(.01+min(.06,sigma.x*.2),.065+min(.4,sigma.x*.8),residual);
+            float weight=clamp(p.feedback.x,0,.95)*confidence*mix(1,.55,clamp(speed/32,0,1));
+            if(finite3(oldColor)&&finite3(oldRaw)&&finite3(low)&&finite3(high))
+                result=mix(current,rgb(clamp(yc(oldColor),low,high)),weight);
+        }
+    }
+    if(!finite3(result))result=original.rgb;
+    result=mix(original.rgb,result,clamp(p.feedback.y,0,1));
+    imageStore(outputColor,xy,vec4(encode(result),original.a));
+}

@@ -9,7 +9,7 @@ $flags=@('-std=c++17','-O2','-static','-shared','-Wall','-Wextra','-Wpedantic','
 if($LASTEXITCODE -ne 0){throw 'Native AA XPLM plugin compilation failed'}
 $inputs=@('src/plugin/native_aa_plugin.cpp','include/native_aa/settings.hpp','include/native_aa/live_channel_win.hpp','include/native_aa/scene_camera.hpp')
 $inputs+=@('include/native_aa/live_channel.hpp','include/native_aa/platform.hpp')
-$inputs+=@('include/native_aa/renderer_selection.hpp')
+$inputs+=@('include/native_aa/renderer_selection.hpp','include/native_aa/user_help.hpp')
 $receipt=[ordered]@{status='PASS';pluginSHA256=(Get-FileHash -LiteralPath (Join-Path $out 'win.xpl') -Algorithm SHA256).Hash;inputs=@($inputs|ForEach-Object{[ordered]@{path=$_;sha256=(Get-FileHash -LiteralPath (Join-Path $PSScriptRoot $_) -Algorithm SHA256).Hash}})}
 [IO.File]::WriteAllText((Join-Path $PSScriptRoot 'build/plugin/build-receipt.json'),($receipt|ConvertTo-Json -Depth 5),[Text.UTF8Encoding]::new($false))
 Write-Output 'Built NativeAA/64/win.xpl. No simulator files changed.'

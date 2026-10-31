@@ -40,3 +40,8 @@ bypass. A selected mode or plugin presence is not proof of GPU completion.
 Run relevant CPU/GPU/activation/installer tests and hosted platform checks.
 Recheck against the last published source and existing fixes. Mark unverified
 Linux flights, HDR/PQ, VR/multi-view, other GPUs and long-flight behavior as such.
+
+
+## Owner update: 2026-10-31
+
+Use short labels and ? help for every setting at an eighth-grade reading level. Add an in-sim changelog instead of videos. Describe only delivered features on the main page; keep technical research in docs. Optional shadow Lua stays separate and Off by default. Research installable motion sources, avoid stacking scene renderers, and prioritize measured shimmer reduction after this UI/update work.

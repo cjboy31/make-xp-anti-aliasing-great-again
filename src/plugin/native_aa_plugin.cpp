@@ -19,6 +19,8 @@
 #include "native_aa/live_channel.hpp"
 #include "native_aa/platform.hpp"
 #include "native_aa/renderer_selection.hpp"
+#include "native_aa/user_help.hpp"
+#include <sstream>
 #include <GL/gl.h>
 #include <filesystem>
 #include <fstream>
@@ -50,8 +52,9 @@ bool plugin_enabled=false;
 bool pending_disk=false;
 struct Rect {int l,t,r,b;bool contains(int x,int y)const{return x>=l && x<r && y<=t && y>b;}};
 struct Hit {Rect rect;int action;};
-std::array<Hit,40> hits{};
+std::array<Hit,80> hits{};
 unsigned panel_tab=0;
+int help_action=-1;
 unsigned hit_count=0;
 int slider=0;
 Rect slider_rect{};
@@ -64,7 +67,14 @@ void box(Rect r,float red,float green,float blue){glColor4f(red,green,blue,1);gl
 void button(Rect r,const char* label,int action,bool selected=false,bool available=true){
     box(r,selected?0.07f:0.10f,selected?0.40f:0.15f,selected?0.47f:0.21f);
     text(r.l+14,r.b+14,label,available?(selected?cyan:white):muted);
-    if(available && hit_count<hits.size())hits[hit_count++]={r,action};
+    if(available && hit_count<hits.size()){
+        const bool has_help=option_help(action)[0]!=0;
+        hits[hit_count++]={{r.l,r.t,r.r-(has_help?30:0),r.b},action};
+        if(has_help&&hit_count<hits.size()){
+            box({r.r-28,r.t-3,r.r-3,r.b+3},0.12f,0.24f,0.31f);
+            text(r.r-21,r.b+14,"?",cyan);hits[hit_count++]={{r.r-28,r.t,r.r,r.b},1000+action};
+        }
+    }
 }
 void persist(bool disk=true){
     pending_disk=!disk;
@@ -88,7 +98,17 @@ void draw_slider(Rect r,unsigned value,const std::string& label,int action,bool 
     text(r.l,r.t+16,label+"  "+std::to_string(value)+"%",active?white:muted);
     box(r,0.12f,0.19f,0.25f);const int x=r.l+int((r.r-r.l)*value/maximum);
     if(active){box({r.l,r.t,x,r.b},0.07f,0.61f,0.66f);box({x-5,r.t+5,x+5,r.b-5},0.65f,0.95f,1);}
+    button({r.r-28,r.t+35,r.r,r.t+9},"?",1000+action);
     if(active && hit_count<hits.size())hits[hit_count++]={{r.l,r.t+8,r.r,r.b-8},action};
+}
+void paragraph(int x,int y,int width,const std::string& value){
+    std::istringstream lines(value);std::string line;
+    while(std::getline(lines,line)){
+        std::istringstream words(line);std::string word,wrapped;
+        while(words>>word){auto next=wrapped.empty()?word:wrapped+" "+word;
+            if(!wrapped.empty()&&XPLMMeasureString(xplmFont_Proportional,next.c_str(),int(next.size()))>width){text(x,y,wrapped);y-=23;wrapped=word;}else wrapped=next;}
+        if(!wrapped.empty()){text(x,y,wrapped);y-=23;}y-=10;
+    }
 }
 void draw_content(XPLMWindowID id){
     int l,t,r,b;XPLMGetWindowGeometry(id,&l,&t,&r,&b);hit_count=0;
@@ -109,9 +129,9 @@ void draw_content(XPLMWindowID id){
     else if(active && temporal_method(settings.method)) {
         if(!temporal_active)state="TAA WAITING - no newly completed temporal frames confirmed";
         else if(settings.motion_debug)state="MOTION DIAGNOSTIC ACTIVE - scene image is temporarily replaced";
-        else state=std::string(settings.method==Method::taa_smaa?"TAA + SMAA":settings.method==Method::taa_fxaa?"TAA + FXAA":"TAA")+" ACTIVE - GPU-completed frames confirmed";
+        else state=std::string(settings.method==Method::taa_smaa?"TAA + SMAA":settings.method==Method::taa_fxaa?"TAA + FXAA":"TAA")+" ACTIVE - processing confirmed";
     }
-    else if(active)state="AA ACTIVE - GPU-completed frames confirmed";
+    else if(active)state="AA ACTIVE - processing confirmed";
     else if(!status.reason.empty())state=status.reason.find("SMAA fallback")!=std::string::npos?"SMAA FALLBACK - TAA is not active; see the reason below":"BYPASSED - "+status.reason;
     else state="WAITING - no newly completed AA frames confirmed";
     text(x,t-72,concise(state),active?cyan:amber);
@@ -120,44 +140,46 @@ void draw_content(XPLMWindowID id){
     text(x+16,t-145,"ENABLE ANTI-ALIASING",white);
     text(x+16,t-170,"Switch off for a direct comparison. Camera and controller settings are untouched.",muted);
     button({right-125,t-133,right-16,t-177},settings.enabled?"ON":"OFF",1,settings.enabled);
-    const int tab_width=(width-20)/3;
-    button({x,t-207,x+tab_width,t-241},"AA modes & combinations",60,panel_tab==0);
-    button({x+tab_width+10,t-207,x+tab_width*2+10,t-241},"Motion & shimmer",61,panel_tab==1);
-    button({x+tab_width*2+20,t-207,right,t-241},"Renderer",62,panel_tab==2);
+    const int tab_width=(width-24)/4;
+    const char* tabs[]={"AA modes","Motion & shimmer","Renderer","Changelog"};
+    for(unsigned i=0;i<4;++i)button({x+int(i)*(tab_width+8),t-207,x+int(i)*(tab_width+8)+tab_width,t-241},tabs[i],60+int(i),panel_tab==i);
+    if(help_action>=0){hit_count=0;button({right-110,t-260,right,t-300},"Back",99);
+        text(x,t-280,"Setting help",cyan);paragraph(x,t-330,width,option_help(help_action));return;}
+    if(panel_tab==3){paragraph(x,t-278,width,changelog_text());button({right-145,t-620,right,t-662},"Close panel",41);return;}
     const bool is_temporal=temporal_method(settings.method),is_combo=combined_method(settings.method);
     if(panel_tab==0){
         const int third=(width-20)/3,half=(width-10)/2;
-        button({x,t-260,x+third,t-301},"SMAA 1x",10,settings.method==Method::smaa);
-        button({x+third+10,t-260,x+2*third+10,t-301},"FXAA 3.11",11,settings.method==Method::fxaa);
+        button({x,t-260,x+third,t-301},"SMAA",10,settings.method==Method::smaa);
+        button({x+third+10,t-260,x+2*third+10,t-301},"FXAA",11,settings.method==Method::fxaa);
         button({x+2*third+20,t-260,right,t-301},"TAA - experimental",12,settings.method==Method::taa);
         button({x,t-311,x+half,t-352},"TAA + SMAA",13,settings.method==Method::taa_smaa);
         button({x+half+10,t-311,right,t-352},"TAA + FXAA",14,settings.method==Method::taa_fxaa);
-        text(x,t-377,is_combo?"Temporal accumulation first; spatial finishing second. Unfiltered TAA history preserves detail.":
-            is_temporal?"Native temporal AA. Tune stabilization, motion assistance and diagnostics on the next tab.":
-            "Spatial AA has no temporal history. X-Plane MSAA may be retained with any method.",muted);
+        text(x,t-377,is_combo?"TAA steadies edges, then the second smoother finishes rough outlines.":
+            is_temporal?"TAA steadies edges over time. Open Motion & shimmer to adjust it.":
+            "SMAA and FXAA smooth each picture. You can also keep X-Plane MSAA on.",muted);
         const int quarter=(width-210)/4;const char* labels[]{"Low","Medium","High","Ultra"};
         for(int i=0;i<4;++i)button({x+i*(quarter+5),t-397,x+i*(quarter+5)+quarter,t-436},labels[i],20+i,
             settings.quality==unsigned(i),settings.method==Method::smaa||settings.method==Method::taa_smaa);
         button({right-180,t-397,right,t-436},"Reset TAA history",50,false,is_temporal);
-        draw_slider({x,t-482,right,t-494},settings.strength,"AA BLEND - 0% retains the native image",30);
-        if(is_combo)draw_slider({x,t-545,right,t-557},settings.spatial_strength,"SPATIAL FINISH - start at 50%; more can soften detail",34);
-        else if(is_temporal)draw_slider({x,t-545,right,t-557},settings.taa_history,"HISTORY WEIGHT - lower responds faster",32,true,95);
-        else draw_slider({x,t-545,right,t-557},settings.subpixel,"FXAA SUBPIXEL FILTER - lower preserves more detail",31,settings.method==Method::fxaa);
+        draw_slider({x,t-482,right,t-494},settings.strength,"AA strength",30);
+        if(is_combo)draw_slider({x,t-545,right,t-557},settings.spatial_strength,"Finishing strength",34);
+        else if(is_temporal)draw_slider({x,t-545,right,t-557},settings.taa_history,"Frame history",32,true,95);
+        else draw_slider({x,t-545,right,t-557},settings.subpixel,"Fine-detail smoothing",31,settings.method==Method::fxaa);
     }else if(panel_tab==1){
-        text(x,t-268,"ESTIMATED MOTION - camera/depth with optional local image refinement",muted);
-        button({x,t-283,x+width/2-5,t-325},"Camera + depth",70,settings.motion_refinement==0,is_temporal);
-        button({x+width/2+5,t-283,right,t-325},"Camera + image refinement",71,settings.motion_refinement==1,is_temporal);
-        text(x,t-348,"Image refinement costs more GPU time. Ambiguous matches retain the camera estimate.",muted);
-        text(x,t-371,"These are estimates, not native object/cloud vectors. Invalid history uses a fresh sample.",muted);
-        draw_slider({x,t-414,right,t-426},settings.shimmer,"SHIMMER STABILIZATION - slow fine detail; 0% uses baseline rejection",33,is_temporal);
-        if(is_temporal)draw_slider({x,t-476,right,t-488},settings.taa_history,"HISTORY WEIGHT - higher accumulates longer; may soften detail",32,true,95);
-        else draw_slider({x,t-476,right,t-488},settings.subpixel,"FXAA SUBPIXEL FILTER",31,settings.method==Method::fxaa);
+        text(x,t-268,"MOTION MATCHING - helps TAA track the picture",muted);
+        button({x,t-283,x+width/2-5,t-325},"Camera movement",70,settings.motion_refinement==0,is_temporal);
+        button({x+width/2+5,t-283,right,t-325},"Camera + image matching",71,settings.motion_refinement==1,is_temporal);
+        text(x,t-348,"Image matching uses more graphics time. Start with Camera movement.",muted);
+        text(x,t-371,"Motion is estimated. It cannot track every propeller, cloud or moving object.",muted);
+        draw_slider({x,t-414,right,t-426},settings.shimmer,"Shimmer reduction",33,is_temporal);
+        if(is_temporal)draw_slider({x,t-476,right,t-488},settings.taa_history,"Frame history",32,true,95);
+        else draw_slider({x,t-476,right,t-488},settings.subpixel,"Fine-detail smoothing",31,settings.method==Method::fxaa);
         const int third=(width-20)/3;
-        button({x,t-511,x+third,t-553},"Scene image",80,settings.motion_debug==0,is_temporal);
-        button({x+third+10,t-511,x+2*third+10,t-553},"Estimated vectors",81,settings.motion_debug==1,is_temporal);
-        button({x+2*third+20,t-511,right,t-553},"History confidence",82,settings.motion_debug==2,is_temporal);
+        button({x,t-511,x+third,t-553},"Normal view",80,settings.motion_debug==0,is_temporal);
+        button({x+third+10,t-511,x+2*third+10,t-553},"Motion test view",81,settings.motion_debug==1,is_temporal);
+        button({x+2*third+20,t-511,right,t-553},"History test view",82,settings.motion_debug==2,is_temporal);
     }else{
-        text(x,t-272,"RENDERER FOR NEXT LAUNCH - one renderer per X-Plane session",cyan);
+        text(x,t-272,"IMAGE PROCESSOR - takes effect after restarting X-Plane",cyan);
         const int half=(width-10)/2;
         button({x,t-293,x+half,t-339},"Native AA",90,renderer_choice==xp_renderer::Choice::native_aa);
         button({x+half+10,t-293,right,t-339},"FSR / NR / frame generation",91,renderer_choice==xp_renderer::Choice::fsr);
@@ -175,7 +197,7 @@ void draw_content(XPLMWindowID id){
     if(notice.rfind("Saved.",0)==0 && fresh && status.applied_sequence==requested_sequence && std::uint32_t(now-changed_tick)>200)
         notice=settings.enabled?"Saved and received by the renderer. See the current-session status above.":"Saved and applied: AA is off.";
     text(x,t-638,concise(notice),cyan);
-    const auto detail="GPU completed: "+std::to_string(temporal_method(settings.method)?status.temporal_completed:status.completed)+"  |  Scratch: "+std::to_string(status.bytes/(1024*1024))+" MiB  |  "+std::to_string(status.width)+" x "+std::to_string(status.height);
+    const auto detail="Frames processed: "+std::to_string(temporal_method(settings.method)?status.temporal_completed:status.completed)+"  |  Mod graphics memory: "+std::to_string(status.bytes/(1024*1024))+" MiB  |  "+std::to_string(status.width)+" x "+std::to_string(status.height);
     text(x,t-662,detail,muted);
     text(x,t-684,"Settings save automatically. Set X-Plane to Full input scale; configure MSAA in X-Plane Graphics.",muted);
 }
@@ -192,9 +214,11 @@ int mouse(XPLMWindowID,int x,int y,XPLMMouseStatus event,void*){
         if(event!=xplm_MouseDown)return 1;
         for(unsigned i=0;i<hit_count;++i)if(hits[i].rect.contains(x,y)){
             const auto action=hits[i].action;
+            if(action>=1000){help_action=action-1000;return 1;}
+            if(action==99){help_action=-1;return 1;}
             if(action==41){slider=0;if(pending_disk)persist();XPLMSetWindowIsVisible(window,0);return 1;}
             if(action>=30 && action<=34){slider=action;slider_rect=hits[i].rect;adjust(x);return 1;}
-            if(action>=60 && action<=62){panel_tab=unsigned(action-60);if(panel_tab==2)renderer_choice=xp_renderer::read(settings_file.parent_path().parent_path().parent_path());return 1;}
+            if(action>=60 && action<=63){help_action=-1;panel_tab=unsigned(action-60);if(panel_tab==2)renderer_choice=xp_renderer::read(settings_file.parent_path().parent_path().parent_path());return 1;}
             if(action>=90 && action<=93){
                 const xp_renderer::Choice values[]{xp_renderer::Choice::native_aa,xp_renderer::Choice::fsr,xp_renderer::Choice::off,xp_renderer::Choice::automatic};
                 xp_renderer::save(settings_file.parent_path().parent_path().parent_path(),values[action-90]);renderer_choice=values[action-90];

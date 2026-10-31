@@ -12,9 +12,9 @@ try{
 }finally{$archive.Dispose()}
 $temporary=Join-Path $PSScriptRoot ('build/package check '+[guid]::NewGuid().ToString('N').Substring(0,8))
 Expand-Archive -LiteralPath $Zip -DestinationPath $temporary
-$package=Join-Path $temporary 'Make-XP-AA-0.3.0-alpha-Windows-x64'
+$package=Join-Path $temporary 'Make-XP-AA-0.3.1-alpha-Windows-x64'
 $manifest=Get-Content -LiteralPath (Join-Path $package 'RELEASE-MANIFEST.json') -Raw|ConvertFrom-Json
-if($manifest.version -ne '0.3.0-alpha' -or $manifest.platform -ne 'Windows-x64'){throw 'Incorrect release version/platform'}
+if($manifest.version -ne '0.3.1-alpha' -or $manifest.platform -ne 'Windows-x64'){throw 'Incorrect release version/platform'}
 if(@(Get-ChildItem -LiteralPath $package -Recurse -File).Count -ne @($manifest.files).Count+1){throw 'Uninventoried package files'}
 foreach($file in $manifest.files){
  if((Get-FileHash -LiteralPath (Join-Path $package $file.path) -Algorithm SHA256).Hash -ne $file.sha256){throw ('Package hash mismatch: '+$file.path)}

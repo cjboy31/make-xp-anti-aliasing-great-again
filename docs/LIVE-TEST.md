@@ -1,9 +1,10 @@
 # Windows native-scene experiment
 
 Branch: `experimental/live-smaa`, stacked on the temporal research branch.
-This is developer source, not an installation package. No working Linux or
-Metal adapter, in-sim AA menu, TAA resolve or general simulator compatibility
-is claimed by this experiment.
+This is developer source, not an end-user installation package. Windows has
+live SMAA/FXAA controls and saved selections. The temporal resolve is tested
+offscreen only; verified live motion/jitter inputs remain unfinished. Working
+Linux/Metal simulator adapters and general compatibility are not claimed.
 
 ## Evidence and admission
 

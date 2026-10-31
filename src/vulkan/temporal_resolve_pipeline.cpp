@@ -52,11 +52,28 @@ bool TemporalResolvePipeline::record(VkCommandBuffer cb,const HistoryStamp& curr
     vkCmdBindDescriptorSets(cb,VK_PIPELINE_BIND_POINT_COMPUTE,layout_,0,1,&set_,0,nullptr);
     vkCmdDispatch(cb,(extent_.width+7)/8,(extent_.height+7)/8,1);return reuse;
 }
-void TemporalResolvePipeline::destroy()noexcept{
-    if(resolve_)vkDestroyPipeline(device_,resolve_,nullptr);if(reset_)vkDestroyPipeline(device_,reset_,nullptr);
-    if(pool_)vkDestroyDescriptorPool(device_,pool_,nullptr);if(layout_)vkDestroyPipelineLayout(device_,layout_,nullptr);
-    if(set_layout_)vkDestroyDescriptorSetLayout(device_,set_layout_,nullptr);
-    if(linear_)vkDestroySampler(device_,linear_,nullptr);if(nearest_)vkDestroySampler(device_,nearest_,nullptr);
+void TemporalResolvePipeline::destroy() noexcept {
+    if (resolve_) {
+        vkDestroyPipeline(device_, resolve_, nullptr);
+    }
+    if (reset_) {
+        vkDestroyPipeline(device_, reset_, nullptr);
+    }
+    if (pool_) {
+        vkDestroyDescriptorPool(device_, pool_, nullptr);
+    }
+    if (layout_) {
+        vkDestroyPipelineLayout(device_, layout_, nullptr);
+    }
+    if (set_layout_) {
+        vkDestroyDescriptorSetLayout(device_, set_layout_, nullptr);
+    }
+    if (linear_) {
+        vkDestroySampler(device_, linear_, nullptr);
+    }
+    if (nearest_) {
+        vkDestroySampler(device_, nearest_, nullptr);
+    }
 }
 TemporalResolvePipeline::~TemporalResolvePipeline(){destroy();}
 }

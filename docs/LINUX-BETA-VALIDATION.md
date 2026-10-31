@@ -23,6 +23,11 @@ The separate synthetic TAA scene also uses disjoint byte ranges for graphics
 dimensions and compute bias; it does not rely on overlapping cross-stage push
 storage. The native compute result remains checked without a pipeline, set or
 compute-push rebind by the fixture after AA injection.
+Fixture shaders target Vulkan 1.1 like the production shaders. Targeting 1.3
+with the older compiler emitted LocalSizeId in the synthetic compute shader,
+which requires maintenance4; the fixture device deliberately does not request
+that optional feature. Current-runtime validation caught this mismatch. The
+shader target was corrected rather than disabling the validation check.
 
 The per-user layer manifest points to a content-hashed library in the selected
 simulator. Its layer/manifest name includes the simulator-root hash so separate

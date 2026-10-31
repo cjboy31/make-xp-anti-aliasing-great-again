@@ -80,8 +80,23 @@ Injected-layer checks include the existing 32 temporal and 46 spatial frames,
 15 exact independently recorded TAA-then-spatial references across all SMAA
 qualities/FXAA and 0/50/100% finishing, 24 motion/stabilization/debug/switch cases,
 12 distinct-family semaphore handoffs, coherent 50k-update IPC, settings migration,
-native state restoration and failure-bypass/zero-scratch teardown. Linux hosted
-checks and live simulator observations are recorded separately when complete.
+native state restoration and failure-bypass/zero-scratch teardown.
+
+The Windows X-Plane 12.4.4-r1/R9700 flight test completed over 35,000 temporal
+frames and 42,000 total AA frames. At native 3840x2160 input with simulator MSAA
+2x and FXAA Off, checks covered TAA, TAA + SMAA, TAA + FXAA, live On/Off,
+refinement, vector/confidence diagnostics, shimmer controls, external ground
+panning and cockpit return. The exception observer recorded no faults and
+X-Plane recorded a normal shutdown. Matched native captures have identical
+recorded camera/projection/FOV/pause state; these stills do not measure temporal
+shimmer or performance. Layer scratch was about 287 MiB in combined modes.
+
+The motion/combination source at `a64d8f1` passed hosted portable CPU, Vulkan and
+native Linux builds on Ubuntu 22.04, with identical baseline binaries retested on
+Ubuntu 24.04. Linux package hashes, native x86_64 ELF files, shader inventory and
+installation lifecycle were independently checked. Physical Linux X-Plane
+flights remain unverified. Renderer-selection changes require their own updated
+checks; see [renderer selection](RENDERER-SELECTION.md).
 
 ## Primary research references
 

@@ -28,8 +28,9 @@ struct Config {
                     shaders=renderer/"shaders";
                     log=root/"Output/NativeAA"/("renderer-"+std::to_string(process_id())+"-"+std::to_string(monotonic_ms())+".log");
                     std::filesystem::create_directories(log.parent_path(),ec);
-                    if(!env("XPFSR24_AUTOMATIC").empty() || (!env("XPFSR24_RUNTIME").empty() && env("DISABLE_XPFSR24").empty()))startup_error="FSR renderer already selected; use a Native AA-only session";
-                    else if(setenv("DISABLE_XPFSR24","1",1)==0)enabled=true;
+                    const bool legacy=!env("XPFSR24_AUTOMATIC").empty() || (!env("XPFSR24_RUNTIME").empty() && env("DISABLE_XPFSR24").empty());
+                    auto selection=xp_renderer::claim(root,xp_renderer::Choice::native_aa,false,legacy);
+                    enabled=selection.allowed;startup_error=selection.reason;
                 }
             }
         }

@@ -21,6 +21,7 @@ foreach($inputFile in @($build.inputs)+@($ui.inputs)+@($setup.inputs)){
  $paths+=$inputFile.path
 }
 $paths=@($paths|Sort-Object -Unique)
+$paths+='docs/RENDERER-SELECTION.md'
 $repo=[IO.Path]::GetFullPath($PSScriptRoot)+[IO.Path]::DirectorySeparatorChar
 foreach($relative in $paths){
  $source=if($relative -eq 'NativeAA-Setup.exe'){Join-Path $PSScriptRoot 'build/setup/NativeAA-Setup.exe'}else{[IO.Path]::GetFullPath((Join-Path $PSScriptRoot $relative))}

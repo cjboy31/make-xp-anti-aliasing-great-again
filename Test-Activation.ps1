@@ -17,7 +17,10 @@ Copy-Item -LiteralPath $dll -Destination (Join-Path $renderer $installedDllName)
 [IO.File]::WriteAllText((Join-Path $renderer 'native-aa-live.json'),((New-NativeAALayerManifest $installedDllName)|ConvertTo-Json -Depth 7),[Text.UTF8Encoding]::new($false))
 $marker=Join-Path (Split-Path $renderer -Parent) 'standalone.enabled'
 [IO.File]::WriteAllText($marker,"NativeAAStandalone=1`n")
-Get-ChildItem Env: | Where-Object {$_.Name -like 'NATIVE_AA_*' -or $_.Name -like 'XPFSR24_*' -or $_.Name -eq 'DISABLE_XPFSR24'} | ForEach-Object {Remove-Item -LiteralPath ('Env:'+$_.Name)}
+Get-ChildItem Env: | Where-Object {$_.Name -like 'NATIVE_AA_*' -or $_.Name -like 'XPFSR24_*' -or $_.Name -like 'XP_RENDERER_*' -or $_.Name -eq 'DISABLE_XPFSR24'} | ForEach-Object {Remove-Item -LiteralPath ('Env:'+$_.Name)}
+$choice=Join-Path $root 'Output/preferences/XP-Renderer-Selection.ini'
+New-Item -ItemType Directory -Path (Split-Path $choice -Parent) -Force|Out-Null
+[IO.File]::WriteAllText($choice,"XPlaneRendererSelection=1`nrenderer=auto`n")
 $env:VK_LAYER_PATH=$renderer
 $env:VK_INSTANCE_LAYERS='VK_LAYER_NATIVE_AA_live_test'
 $env:VK_LOADER_LAYERS_DISABLE='~implicit~'
@@ -25,6 +28,12 @@ $env:VK_LOADER_LAYERS_DISABLE='~implicit~'
 if($LASTEXITCODE -ne 0){throw 'Unrelated app was not isolated'}
 & $exe selected
 if($LASTEXITCODE -ne 0){throw 'Installed selected executable did not activate'}
+foreach($value in @('fsr','off','native_aa','auto')){
+ [IO.File]::WriteAllText($choice,("XPlaneRendererSelection=1`nrenderer="+$value+"`n"))
+ # Probe observes FSR bypass: an original-simulator session also sets bypass.
+ & $exe $(if($value -eq 'fsr'){'passive'}elseif($value -eq 'off'){'original'}else{'selected'})
+ if($LASTEXITCODE -ne 0){throw ('Saved renderer selection failed: '+$value)}
+}
 $env:NATIVE_AA_DISABLE='1'
 & $exe passive
 if($LASTEXITCODE -ne 0){throw 'Opt-out was ignored'}
@@ -36,6 +45,6 @@ if($LASTEXITCODE -ne 0){throw 'Disabled installation was admitted'}
 $env:XPFSR24_AUTOMATIC='1'
 & $exe passive
 if($LASTEXITCODE -ne 0){throw 'Existing FSR session was not respected'}
-$receipt=[ordered]@{status='PASS';dllSHA256=(Get-FileHash -LiteralPath $dll -Algorithm SHA256).Hash;manifestSourceSHA256=(Get-FileHash -LiteralPath (Join-Path $PSScriptRoot 'tools/LayerManifest.ps1') -Algorithm SHA256).Hash;cases=@('unrelated executable','selected exact executable','environment opt-out','disabled marker','FSR startup conflict')}
+$receipt=[ordered]@{status='PASS';dllSHA256=(Get-FileHash -LiteralPath $dll -Algorithm SHA256).Hash;manifestSourceSHA256=(Get-FileHash -LiteralPath (Join-Path $PSScriptRoot 'tools/LayerManifest.ps1') -Algorithm SHA256).Hash;cases=@('unrelated executable','selected exact executable','environment opt-out','disabled marker','FSR startup conflict','saved renderer selection')}
 [IO.File]::WriteAllText((Join-Path $PSScriptRoot 'build/live-layer/activation-receipt.json'),($receipt|ConvertTo-Json),[Text.UTF8Encoding]::new($false))
-Write-Output 'Activation isolation: all five lifecycle/selection cases passed. No registry or real simulator files changed.'
+Write-Output 'Activation isolation: lifecycle and saved renderer-selection cases passed. No registry or real simulator files changed.'

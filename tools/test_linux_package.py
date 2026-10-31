@@ -35,7 +35,7 @@ with tempfile.TemporaryDirectory(prefix='native-aa-linux-') as temporary:
     shutil.copy2(probe, simulator / 'X-Plane-x86_64')
     outside = base / 'unrelated-vulkan-app'
     shutil.copy2(probe, outside)
-    env = {k: v for k, v in os.environ.items() if not k.startswith(('NATIVE_AA_', 'XPFSR24_', 'DISABLE_XPFSR24', 'VK_LAYER', 'VK_INSTANCE', 'VK_LOADER_LAYERS'))}
+    env = {k: v for k, v in os.environ.items() if not k.startswith(('NATIVE_AA_', 'XPFSR24_', 'XP_RENDERER_', 'DISABLE_XPFSR24', 'VK_LAYER', 'VK_INSTANCE', 'VK_LOADER_LAYERS'))}
     env.update(XDG_DATA_HOME=str(base / 'user-data'), XDG_CONFIG_HOME=str(base / 'user-config'),
                XDG_DATA_DIRS=str(base / 'data-dirs'), XDG_CONFIG_DIRS=str(base / 'config-dirs'))
 
@@ -44,7 +44,7 @@ with tempfile.TemporaryDirectory(prefix='native-aa-linux-') as temporary:
         assert result.returncode == expected, ('setup', args, result.returncode, expected)
 
     def activation(executable, selected, **extra):
-        subprocess.run([str(executable), 'selected' if selected else 'passive'], env={**env, **extra}, check=True, timeout=30)
+        subprocess.run([str(executable), selected if isinstance(selected, str) else 'selected' if selected else 'passive'], env={**env, **extra}, check=True, timeout=30)
 
     setup()
     destination = simulator / 'Resources/plugins/NativeAA'
@@ -55,6 +55,10 @@ with tempfile.TemporaryDirectory(prefix='native-aa-linux-') as temporary:
     other_manifest.write_text('another application owns this')
     activation(outside, False)
     activation(simulator / 'X-Plane-x86_64', True)
+    choice = simulator / 'Output/preferences/XP-Renderer-Selection.ini'
+    for selected in ('fsr', 'off', 'native_aa', 'auto'):
+        choice.write_text('XPlaneRendererSelection=1\nrenderer=' + selected + '\n')
+        activation(simulator / 'X-Plane-x86_64', 'original' if selected == 'off' else selected != 'fsr')
     activation(simulator / 'X-Plane-x86_64', False, NATIVE_AA_DISABLE='1')
     marker = destination / 'standalone.enabled'
     marker.write_text('NativeAAStandalone=0\n')

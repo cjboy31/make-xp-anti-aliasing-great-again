@@ -35,6 +35,7 @@ files = {
     'NativeAA/notices/FXAA-Intel-Apache.txt': repo / 'third_party/fxaa/CMAA2-license.txt',
     'NativeAA/notices/XPLM-SDK-license.txt': repo / 'third_party/XPLM-SDK-license.txt',
     'docs/MOTION-SHIMMER-COMBINATIONS.md': repo / 'docs/MOTION-SHIMMER-COMBINATIONS.md',
+    'docs/RENDERER-SELECTION.md': repo / 'docs/RENDERER-SELECTION.md',
     'validation/linux-layer-test-receipt.json': build / 'linux-layer-test-receipt.json',
 }
 shaders = [p for p in (build / 'shaders').iterdir() if re.fullmatch(r'(live-smaa-[0-3]-[0-2]|fxaa-[02]|native-taa|native-depth-(1|ms))\.comp\.spv', p.name)]

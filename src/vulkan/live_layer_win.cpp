@@ -8,6 +8,7 @@
 #include "native_aa/push_constants.hpp"
 #include "native_aa/live_channel.hpp"
 #include "native_aa/platform.hpp"
+#include "native_aa/renderer_selection.hpp"
 #include "native_aa/native_taa_pipeline.hpp"
 #include <vulkan/vk_layer.h>
 #ifdef _WIN32
@@ -72,13 +73,9 @@ struct Config {
                 if(selected){
                     shaders=renderer/L"shaders";log=root/L"Output"/L"NativeAA"/(L"renderer-"+std::to_wstring(process_id())+L"-"+std::to_wstring(monotonic_ms())+L".log");
                     std::error_code ec;std::filesystem::create_directories(log.parent_path(),ec);
-                    if(!env(L"XPFSR24_AUTOMATIC").empty() || (!env(L"XPFSR24_RUNTIME").empty() && env(L"DISABLE_XPFSR24").empty()))
-                        startup_error="FSR renderer already selected; start using the Native AA shortcut";
-                    else{
-                        // Process-only handover. Never edit FSR settings or its
-                        // registry. Negotiation occurs before this layer's GIPA.
-                        SetEnvironmentVariableW(L"DISABLE_XPFSR24",L"1");enabled=true;
-                    }
+                    const bool legacy=!env(L"XPFSR24_AUTOMATIC").empty() || (!env(L"XPFSR24_RUNTIME").empty() && env(L"DISABLE_XPFSR24").empty());
+                    auto selection=xp_renderer::claim(root,xp_renderer::Choice::native_aa,false,legacy);
+                    enabled=selection.allowed;startup_error=selection.reason;
                 }
             }
         }
@@ -695,7 +692,7 @@ void finish_scene(Device& d,VkCommandBuffer cb,Commands& s) noexcept {
             d.reason("input is not native output size; set X-Plane input scale to Full");return;
         }
         auto native=d.native_extents.find(extent);
-        if(native==d.native_extents.end() || !native->second){d.reason("native scene extent not verified");return;}
+        if(native==d.native_extents.end() || !native->second){d.reason("Native scene extent not verified; set X-Plane input scale to Off / Full resolution");return;}
         if(d.failed.count(s.render_image)){d.reason("previous AA allocation failed for this scene image");return;}
         auto it=d.surfaces.find(s.render_image);
         if(it==d.surfaces.end()) {

@@ -4,6 +4,11 @@ Open **Plugins > Native AA > Open AA controls**. Enable or disable processing
 with the ON/OFF button. Changes apply live and save automatically to
 `Output/preferences/NativeAA.ini` in this simulator installation.
 
+Use the **Renderer** tab to choose Native AA, FSR/NR/frame generation, or the
+original simulator for the next launch. Only one renderer processes a session;
+switching renderers requires a normal restart. This preserves each mod's own
+settings. See [renderer selection](RENDERER-SELECTION.md).
+
 For the prebuilt release, download the Windows ZIP asset, extract all files,
 close X-Plane, run **NativeAA-Setup.exe** and select the folder containing
 `X-Plane.exe`. Your usual or third-party launcher can then start the simulator.

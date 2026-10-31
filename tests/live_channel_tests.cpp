@@ -1,4 +1,5 @@
-#include "native_aa/live_channel_win.hpp"
+#include "native_aa/live_channel.hpp"
+#include "native_aa/platform.hpp"
 #include <thread>
 #include <atomic>
 #include <iostream>
@@ -9,7 +10,7 @@ int main(){
     need(!reader.controls(s,sequence));LiveStatus status;need(!reader.status(status));
     std::atomic<bool> done{false};
     std::thread producer([&]{for(unsigned i=0;i<50000;++i){Settings v{bool(i%2),Method(i%2),i%4,i%101,i%101};writer.write_controls(v);
-        writer.write_status({true,GetTickCount(),i,i,0,i,i,i,i,"test",i,i,i});
+        writer.write_status({true,tick_ms(),i,i,0,i,i,i,i,"test",i,i,i});
         SceneCamera camera{};camera.frame=i+1;camera.epoch=i+1;camera.projection.fill(double(i));writer.write_camera(camera);
     }done=true;});
     unsigned snapshots=0;while(!done){if(reader.controls(s,sequence)){need(valid(s) && s.strength==s.subpixel && unsigned(s.method)==unsigned(s.enabled));++snapshots;}

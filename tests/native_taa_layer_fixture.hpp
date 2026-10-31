@@ -113,7 +113,7 @@ void native_taa_layer_checks(Context& c,const std::filesystem::path& shaders){
         camera.projection=camera.world=native_aa::identity_matrix();
         for(unsigned frame=0;frame<18;++frame){
             settings.enabled=frame!=0 && frame!=17;settings.taa_history=85;channel.write_controls(settings);
-            camera.frame=frame+1;camera.tick=GetTickCount();camera.reset=frame==1 || frame==12;
+            camera.frame=frame+1;camera.tick=native_aa::tick_ms();camera.reset=frame==1 || frame==12;
             if(frame==12)++camera.epoch;
             channel.write_camera(camera);
             c.submit([&](auto cb){scene.record(cb,state,size.width==193);});state.verify();

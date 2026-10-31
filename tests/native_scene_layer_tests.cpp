@@ -4,7 +4,8 @@
 #include "smaa_vulkan_tests.cpp"
 #undef main
 #include <cstdlib>
-#include "native_aa/live_channel_win.hpp"
+#include "native_aa/live_channel.hpp"
+#include "native_aa/platform.hpp"
 
 namespace {
 VkShaderModule module(Context& c,const std::filesystem::path& path) {

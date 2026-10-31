@@ -42,6 +42,7 @@ if(BUILD_TESTING)
   add_test(NAME native-aa-scene-camera COMMAND scene_camera_tests)
 endif()
 
+
 option(NATIVE_AA_BUILD_VULKAN_TESTS "Build the offscreen SDR Vulkan prototype" OFF)
 option(NATIVE_AA_GPU_VALIDATION "Require synchronization validation for GPU tests" ON)
 if(NATIVE_AA_BUILD_VULKAN_TESTS)
@@ -163,3 +164,5 @@ if(NATIVE_AA_BUILD_VULKAN_TESTS)
     set_tests_properties(native-aa-native-taa PROPERTIES TIMEOUT 120)
   endif()
 endif()
+
+include(cmake/linux.cmake)

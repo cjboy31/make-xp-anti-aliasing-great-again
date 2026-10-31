@@ -39,7 +39,7 @@ struct Context {
         else if (severity & VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT) ++self.warnings;
         std::cerr << "Vulkan validation: " << data->pMessage << '\n'; return VK_FALSE;
     }
-    explicit Context(bool validation,bool dynamic_rendering=false,bool asynchronous=false,bool multi_viewport=false) {
+    explicit Context(bool validation,bool dynamic_rendering=false,bool asynchronous=false,bool multi_viewport=false,bool allow_single_queue=false) {
         try {
             const char* layer = "VK_LAYER_KHRONOS_validation";
             if (validation) {
@@ -107,8 +107,9 @@ struct Context {
                 unsigned count{};vkGetPhysicalDeviceQueueFamilyProperties(physical,&count,nullptr);
                 std::vector<VkQueueFamilyProperties> queues(count);vkGetPhysicalDeviceQueueFamilyProperties(physical,&count,queues.data());
                 for(unsigned i=0;i<count;++i)if(i!=family && queues[i].queueCount && (queues[i].queueFlags&VK_QUEUE_COMPUTE_BIT)){async_family=i;break;}
+                if(async_family==~0U && allow_single_queue)async_family=family;
                 need(async_family!=~0U,"Async regression requires another compute-capable queue family");
-                queue_infos[1].queueFamilyIndex=async_family;device_info.queueCreateInfoCount=2;device_info.pQueueCreateInfos=queue_infos.data();
+                if(async_family!=family){queue_infos[1].queueFamilyIndex=async_family;device_info.queueCreateInfoCount=2;device_info.pQueueCreateInfos=queue_infos.data();}
             }
             VkPhysicalDeviceVulkan13Features dynamic{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES};
             dynamic.dynamicRendering=VK_TRUE;

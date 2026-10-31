@@ -37,7 +37,7 @@ for mode in ('normal', 'allocation', 'missing-shaders'):
         run_env['NATIVE_AA_TEST_FAIL_ALLOC'] = '1'
     if mode == 'missing-shaders':
         run_env['NATIVE_AA_SHADERS'] = str(build / 'missing-shaders')
-    subprocess.run([str(fixture), str(shaders)] + ([] if mode == 'normal' else ['--expect-bypass']),
+    subprocess.run([str(fixture), str(shaders), '--allow-single-queue'] + ([] if mode == 'normal' else ['--expect-bypass']),
                    env=run_env, check=True, timeout=480)
     text = log.read_text()
     assert 'scratch_remaining=0' in text, mode + ': incomplete resource retirement'
@@ -48,6 +48,6 @@ for mode in ('normal', 'allocation', 'missing-shaders'):
 receipt = {'status': 'PASS', 'platform': 'Linux-x86_64',
            'layerSHA256': hashlib.sha256(library.read_bytes()).hexdigest(),
            'fixtureSHA256': hashlib.sha256(fixture.read_bytes()).hexdigest(),
-           'scope': 'Injected synthetic scenes, GPU readback/state/ownership/bypass; not an X-Plane flight test'}
+           'scope': 'Injected synthetic scenes, GPU readback/state/ownership/bypass; single-family software-driver semaphore coverage; not a Linux cross-family or X-Plane flight test'}
 (build / 'linux-layer-test-receipt.json').write_text(json.dumps(receipt, indent=2))
 print('Native Linux injected SMAA/FXAA/TAA, allocation/shader bypass and zero-scratch retirement PASS')

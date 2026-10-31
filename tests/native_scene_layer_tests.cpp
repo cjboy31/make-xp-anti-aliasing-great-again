@@ -148,9 +148,11 @@ struct AsyncReadback {
 }
 int main(int argc,char** argv) {
     try {
-        need(argc==2 || argc==3,"Usage: native_scene_layer_tests SHADERS [--expect-bypass]");
-        bool bypass=argc==3 && std::string(argv[2])=="--expect-bypass";
-        std::filesystem::path shaders=argv[1];Context c(true,true,true,true);
+        need(argc>=2 && argc<=4,"Usage: native_scene_layer_tests SHADERS [--expect-bypass] [--allow-single-queue]");
+        bool bypass=false,allow_single_queue=false;
+        for(int n=2;n<argc;++n){const std::string option=argv[n];if(option=="--expect-bypass")bypass=true;else if(option=="--allow-single-queue")allow_single_queue=true;else need(false,"Unknown fixture option");}
+        std::filesystem::path shaders=argv[1];Context c(true,true,true,true,allow_single_queue);
+        std::cout<<(c.async_family==c.family?"Queue coverage: single-queue semaphore handoffs; cross-family coverage unavailable":"Queue coverage: two distinct queue families")<<'\n';
         for(auto extent:{VkExtent2D{65,49},VkExtent2D{257,145},VkExtent2D{3840,2160}}){
             Image scene(c,extent,VK_FORMAT_R8G8B8A8_SRGB,4,true,false,false,c.async_family),hdr(c,extent,VK_FORMAT_R16G16B16A16_SFLOAT,8,true);
             if(extent.width>65){
@@ -197,6 +199,6 @@ int main(int argc,char** argv) {
         }
         if(!bypass)native_taa_layer_checks(c,shaders);
         need(c.allocated_bytes==0,"Native fixture retained allocations");c.close();need(c.errors==0,"Layer validation errors");need(c.warnings==0,"Layer validation warnings");
-        std::cout<<"Native scene layer PASS: "<<(bypass?"failure bypass":"46 injected frames, including 10 live method/quality/strength cases, 12 two-queue handoffs, 2 resizes, state restoration, UI bypass and live On/Off")<<", zero validation messages.\n";return 0;
+        std::cout<<"Native scene layer PASS: "<<(bypass?"failure bypass":"46 injected frames, including 10 live method/quality/strength cases, 12 semaphore handoffs, 2 resizes, state restoration, UI bypass and live On/Off")<<", zero validation messages.\n";return 0;
     }catch(const std::exception& e){std::cerr<<"Native scene layer FAIL: "<<e.what()<<'\n';return 1;}
 }

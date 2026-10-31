@@ -30,6 +30,10 @@ offscreen algorithms and the actual injected-layer GPU fixture. The injected
 fixture verifies current GPU pixels, alpha/state/descriptor restoration, TAA
 history/reset, ownership and allocation/missing-shader bypass, with zero owned
 scratch at teardown. Synchronization/standard validation messages are failures.
+The hosted software Vulkan driver exposes one queue family. An explicit fixture
+option exercises same-queue semaphore producer/consumer submissions there; it
+does not establish distinct-family concurrency. The Windows R9700 fixture keeps
+the strict two-family requirement and has passed those handoffs separately.
 
 The extracted tarball is checked against its manifest and tested through initial
 install, update retirement and uninstall. Tests cover path traversal and symlink

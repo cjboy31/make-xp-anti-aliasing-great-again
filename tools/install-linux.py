@@ -108,6 +108,10 @@ def install(root, registration=True):
     registered = registration_path(root) if registration else None
     if registered and registered.is_symlink():
         raise ValueError('Refusing redirected layer manifest')
+    if registered and registered.exists():
+        old = previous.get('registration') if previous else None
+        if not old or old['path'] != str(registered) or sha(registered) != old['sha256']:
+            raise ValueError('Existing layer manifest is not an unchanged owned file; no files changed')
     for file in files:
         target = within(destination, file['path'])
         target.parent.mkdir(parents=True, exist_ok=True)

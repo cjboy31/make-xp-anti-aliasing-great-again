@@ -18,5 +18,8 @@ int main(){
         SceneCamera camera;if(reader.camera(camera)){need(camera.frame==camera.epoch && camera.frame>0);for(double value:camera.projection)need(value==double(camera.frame-1));}
     }
     producer.join();writer.close();need(reader.controls(s,sequence));need(snapshots>0);
+    reader.close();
+    LiveChannel fresh;need(fresh.open());
+    need(!fresh.controls(s,sequence));need(!fresh.status(status));
     std::cout<<"Live IPC: 50,000 concurrent settings/status updates with coherent bounded snapshots passed\n";
 }

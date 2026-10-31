@@ -3,8 +3,9 @@
 Research and first implementation milestone: 2026-10-31. This experiment is
 separate from the tested spatial-AA milestone. The `experimental/live-taa`
 branch now connects an original camera/depth TAA implementation to the Windows
-scene adapter. Its injected-layer and offscreen checks pass; private simulator
-quality/stability validation is still in progress. It supplies estimated camera
+scene adapter. Its injected-layer/offscreen checks and initial live Windows
+integration checks pass; see [the live record](TAA-LIVE-VALIDATION.md).
+Broader quality/stability evaluation remains open. It supplies estimated camera
 motion with rejection, not general native object/cloud velocity.
 
 ## Source review and decisions

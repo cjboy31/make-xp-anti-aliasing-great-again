@@ -21,8 +21,36 @@ scene adapter and live panel. It uses geometry jitter, a bounded depth snapshot,
 camera/depth reprojection, color/depth rejection and clipped temporal history.
 Camera motion is estimated; X-Plane does not supply general object/cloud vectors.
 Sky/invalid depth uses fresh samples. Unsupported capture falls back visibly to
-SMAA. Private flight validation is in progress; this is not a packaged TAA release.
+SMAA. Live Windows verification now confirms completed temporal frames, history
+reuse, live controls and clean restart on X-Plane 12.4.4 / R9700. This is still an
+experimental developer build, not a general compatibility or long-flight guarantee.
 See [motion research and AA alternatives](docs/MOTION-AND-TEMPORAL-AA.md).
+
+## See the difference
+
+Matched native 4K X-Plane screenshots: identical recorded camera/projection,
+Full input and simulator MSAA 2x retained. These are 1:1 pixel crops with labels;
+no sharpening, exposure adjustment or image enhancement was applied. Click each
+image to inspect it. Stills show edge/detail differences, not measured reductions
+in moving shimmer, ghosting or frame time.
+
+| Method | Intended use | Trade-off |
+| --- | --- | --- |
+| SMAA High | Smooth aircraft outlines and geometric stair-steps without history | Cannot stabilize all temporal shimmer |
+| FXAA 3.11 | A simple alternative for broad spatial edge smoothing | Can soften fine texture/text detail |
+| TAA experimental | Accumulate native subpixel geometry samples over time | Can soften detail; estimated motion has limits |
+
+![SMAA High before and after](docs/showcase/smaa-high-comparison.png)
+
+![FXAA before and after](docs/showcase/fxaa-comparison.png)
+
+![Experimental TAA before and after](docs/showcase/taa-comparison.png)
+
+See [capture conditions and limits](docs/showcase/README.md),
+[live TAA validation](docs/TAA-LIVE-VALIDATION.md) and
+[in-sim controls and build/install instructions](docs/CONTROLS.md).
+**These screenshots showcase the Windows development build. There is no
+packaged general-release installer or working Linux/macOS scene adapter yet.**
 
 ## Direction
 
@@ -36,15 +64,16 @@ See [motion research and AA alternatives](docs/MOTION-AND-TEMPORAL-AA.md).
 - Measure texture detail, moving thin lines, clouds, HDR, memory and frame time
   before making quality or performance claims.
 
-A spatial filter cannot promise to remove all temporal shimmer, cloud
-undersampling, texture aliasing or shadow artifacts. Temporal AA is a separate
-future evaluation requiring verified jitter/motion and history invalidation.
+A spatial filter cannot promise to remove temporal shimmer, cloud undersampling,
+texture aliasing or shadow artifacts. Experimental TAA addresses temporal sampling
+with verified geometry jitter and history rejection; general object/cloud motion
+remains a separate workstream. Sharpening is not a substitute for correct history.
 
 ## Platform targets
 
 | Target | Intended integration | Current state |
 | --- | --- | --- |
-| Windows x64 | Vulkan scene processing | R9700 offscreen tests; exact-version adapter under live evaluation |
+| Windows x64 | Vulkan scene processing | Initial live SMAA/FXAA/TAA checks on 12.4.4 / R9700; broader compatibility open |
 | Linux x64 | Native Vulkan scene processing | Offscreen Vulkan fixture/CI; no simulator integration |
 | macOS arm64 / x86_64 | Native Metal scene processing | Portable core; Metal scene-access investigation required |
 

@@ -56,8 +56,11 @@ The owner's motion-vector/TAA follow-up is now isolated on
 `experimental/temporal-aa`, based on the SMAA prototype. Original camera/depth
 GPU vectors, convention normalization and history gates are implemented and
 tested offscreen. An original TAA resolve has also passed GPU/reference checks;
-verified simulator jitter, per-object/cloud motion, SMAA T2x sampling and live
-provider interoperation remain pending. See
+the `experimental/live-taa` branch now connects native geometry jitter and
+camera/depth reprojection to the in-sim panel. Live Windows completion, controls,
+panning, method switching and restart are verified in
+[the TAA validation record](TAA-LIVE-VALIDATION.md). Per-object/cloud motion,
+SMAA T2x sampling and live provider interoperation remain pending. See
 [the research and integration plan](MOTION-AND-TEMPORAL-AA.md).
 
 No dates, GPU support guarantees or installable rendering release are promised

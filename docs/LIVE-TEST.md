@@ -1,9 +1,9 @@
 # Windows native-scene experiment
 
-Branch: `experimental/live-smaa`, stacked on the temporal research branch.
+Branch: `experimental/live-taa`, stacked on the spatial and temporal research branches.
 This is developer source, not an end-user installation package. Windows has
-live SMAA/FXAA controls and saved selections. The temporal resolve is tested
-offscreen only; verified live motion/jitter inputs remain unfinished. Working
+live SMAA/FXAA/TAA controls and saved selections. The native TAA integration has
+completed live Windows checks described below. Working
 Linux/Metal simulator adapters and general compatibility are not claimed.
 
 ## Evidence and admission
@@ -15,7 +15,9 @@ transfer usage bits. The native scene was full size; simulator MSAA was 2x,
 FXAA was Off, and FSR/NR/frame generation were disabled. Windows desktop HDR
 being enabled does not turn this captured SRGB8 surface into PQ/scRGB data.
 
-The private capture and all simulator pixels/assets remain outside Git.
+The private RenderDoc capture, simulator shader bytes, raw assets and personal
+logs remain outside Git. Owner-approved comparison screenshots are illustration
+material in the showcase; they are not reusable simulator assets or MIT shaders.
 Only shader SHA-256 identifiers are used for the exact-version admission
 check; no simulator shader bytes are distributed. An unrecognized shader,
 image role, format, rendering pass or native-size contract must bypass AA.
@@ -54,7 +56,9 @@ compute passes, and copies the encoded result back into the original scene
 image before UI composition. It restores the native image layout and publishes
 its transfer write to subsequent operations. It restores previously valid
 compute descriptors, dynamic buffer offsets and the compute pipeline. It does
-not bind a graphics pipeline or change viewport/scissor/vertex/index state.
+not bind a graphics pipeline or change scissor/vertex/index state. SMAA/FXAA do
+not alter viewports. TAA temporarily jitters admitted geometry viewports and
+restores the original single or identical paired viewports afterward.
 Unsupported descriptor-buffer/shader-object, push-descriptor, secondary and
 other unverified state paths bypass instead of guessing restoration.
 

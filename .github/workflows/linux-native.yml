@@ -30,7 +30,7 @@ jobs:
           export VK_ICD_FILENAMES="$(find /usr/share/vulkan/icd.d -name '*lvp*.json' -print -quit)"
           test -f "$VK_ICD_FILENAMES"
           export VK_LOADER_LAYERS_DISABLE='~implicit~'
-          ctest --test-dir build-linux --output-on-failure -E native-aa-linux-injected
+          ctest --test-dir build-linux --output-on-failure
           tar -czf linux-build-for-validation.tar.gz build-linux/libnative-aa.so build-linux/lin.xpl build-linux/native_aa_activation_probe build-linux/native_scene_layer_tests build-linux/shaders
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:

@@ -9,6 +9,17 @@ with explicit symbol exports for the Vulkan layer and five XPLM entry points.
 The distribution provides Vulkan, OpenGL, the C++ runtime and libcrypto.so.3.
 The SDK is a build dependency and is excluded from published archives.
 
+An injected readback exposed compute push-constant loss on both tested Linux
+software runtimes: the retained descriptor value was 300 but the native bias 17
+was absent. The adapter now shadows and explicitly replays eligible compute-stage
+push constants after restoring pipelines/descriptors and after depth capture.
+The shadow is bounded to 256 bytes and validates every required word, layout
+signature and lifetime. Mixed-stage updates, incompatible signature changes,
+unknown extension data, missing bytes or excessive ranges bypass injection.
+Both the legacy and core/KHR push-constant commands are intercepted. This avoids
+depending on implicit preservation across inserted private pipelines. Its CPU
+contracts and actual injected readbacks must pass before a package is released.
+
 The per-user layer manifest points to a content-hashed library in the selected
 simulator. Its layer/manifest name includes the simulator-root hash so separate
 installations do not share a discovery name. Admission checks the actual

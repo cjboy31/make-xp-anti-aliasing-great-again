@@ -5,6 +5,7 @@
 #include "live_dispatch.hpp"
 #include "native_aa/compute_smaa_pipeline.hpp"
 #include "native_aa/descriptor_state.hpp"
+#include "native_aa/push_constants.hpp"
 #include "native_aa/live_channel.hpp"
 #include "native_aa/platform.hpp"
 #include "native_aa/native_taa_pipeline.hpp"
@@ -167,10 +168,11 @@ struct ViewMeta {VkImage image{};VkFormat format{};bool full=false;};
 struct PipelineMeta {bool target=false,geometry=false,viewport_dynamic=false,viewport_count=false;};
 struct SetMeta {std::uint64_t canonical{};unsigned dynamic{};bool valid=false;};
 struct SamplerMeta {std::uint64_t canonical{};bool valid=false;};
-struct LayoutMeta {DescriptorLayout definition;std::array<unsigned,descriptor_sets> dynamic{};};
+struct LayoutMeta {DescriptorLayout definition;std::array<unsigned,descriptor_sets> dynamic{};VkPushConstantRange compute_push{};};
 struct Commands {
     VkCommandPool pool{};unsigned family{};bool primary=false,unsupported=false;
     VkPipeline compute{},graphics{};DescriptorState descriptors;
+    ComputePushShadow push_constants;VkPipelineLayout push_layout{};
     std::uint64_t compute_epoch=0;
     VkImage render_image{};VkImageLayout render_layout{};VkExtent2D extent{};
     bool render_candidate=false,render_unknown=false,graphics_target=false;unsigned render_draws=0;
@@ -514,9 +516,22 @@ void restore_compute(Device& d,VkCommandBuffer cb,Commands& s) {
         const auto set=reinterpret_cast<VkDescriptorSet>(binding.set);
         d.f.CmdBindDescriptorSets(cb,VK_PIPELINE_BIND_POINT_COMPUTE,reinterpret_cast<VkPipelineLayout>(binding.layout),n,1,&set,binding.offset_count,binding.offsets.data());
     }
+    if(s.push_constants.has_data()){
+        const auto layout=d.layouts.find(s.push_layout);
+        if(layout!=d.layouts.end()){
+            const auto& range=layout->second.compute_push;
+            d.f.CmdPushConstants(cb,s.push_layout,VK_SHADER_STAGE_COMPUTE_BIT,range.offset,range.size,s.push_constants.data(range.offset));
+        }
+    }
 }
 bool restorable_compute(Device& d,const Commands& s){
     if(!s.descriptors.supported)return false;
+    if(!s.push_constants.supported())return false;
+    if(s.push_constants.has_data()){
+        const auto layout=d.layouts.find(s.push_layout);
+        if(layout==d.layouts.end() || !d.f.CmdPushConstants || !layout->second.definition.valid || layout->second.compute_push.stageFlags!=VK_SHADER_STAGE_COMPUTE_BIT ||
+            !s.push_constants.covers(layout->second.definition.push_signature,layout->second.compute_push.offset,layout->second.compute_push.size))return false;
+    }
     if(s.compute){const auto epoch=d.pipeline_epochs.find(s.compute);if(epoch==d.pipeline_epochs.end() || epoch->second!=s.compute_epoch)return false;}
     for(const auto& binding:s.descriptors.bound)if(binding.valid){
         const auto layout=d.layouts.find(reinterpret_cast<VkPipelineLayout>(binding.layout));
@@ -606,7 +621,8 @@ void finish_scene(Device& d,VkCommandBuffer cb,Commands& s) noexcept {
         if(!s.primary){d.reason("scene recorded inside unsupported secondary buffer");return;}
         if(s.unsupported){d.reason("unverified command-state extension or secondary execution");return;}
         if(!s.descriptors.supported){d.reason("unsupported compute descriptor layout/state");return;}
-        if(!restorable_compute(d,s)){d.reason("compute pipeline/layout retired or changed");return;}
+        if(!s.push_constants.supported()){d.reason("unsupported compute push-constant updates; native scene retained");return;}
+        if(!restorable_compute(d,s)){d.reason("native compute state cannot be restored safely");return;}
         if(s.render_unknown){d.reason("unrecognized shader/draw in LDR scene");return;}
         if(s.render_draws!=1){d.reason("LDR draw count="+std::to_string(s.render_draws));return;}
         for(const auto& b:s.descriptors.bound)if(b.valid){
@@ -643,12 +659,7 @@ void finish_scene(Device& d,VkCommandBuffer cb,Commands& s) noexcept {
         if(!temporal)it->second->record(cb);
         s.injected=true;
         d.width=s.extent.width;d.height=s.extent.height;
-        if(s.compute)d.f.CmdBindPipeline(cb,VK_PIPELINE_BIND_POINT_COMPUTE,s.compute);
-        for(unsigned n=0;n<descriptor_sets;++n) {
-            const auto& binding=s.descriptors.bound[n];if(!binding.valid)continue;
-            const auto set=reinterpret_cast<VkDescriptorSet>(binding.set);
-            d.f.CmdBindDescriptorSets(cb,VK_PIPELINE_BIND_POINT_COMPUTE,reinterpret_cast<VkPipelineLayout>(binding.layout),n,1,&set,binding.offset_count,binding.offsets.data());
-        }
+        restore_compute(d,cb,s);
         ++s.aa_recorded;++d.recorded;
         if(d.recorded==1)trace("RECORDED native AA; completion not yet confirmed");
         if(fallback.empty())d.last_reason.clear();else d.reason(fallback);
@@ -800,7 +811,7 @@ AA_EXPORT void VKAPI_CALL aaDestroySetLayout(VkDevice h,VkDescriptorSetLayout s,
 AA_EXPORT VkResult VKAPI_CALL aaPipelineLayout(VkDevice h,const VkPipelineLayoutCreateInfo* info,const VkAllocationCallbacks* a,VkPipelineLayout* layout){auto d=device(key(h));auto r=d->f.CreatePipelineLayout(h,info,a,layout);
     if(r==VK_SUCCESS){std::lock_guard<std::recursive_mutex> l(d->mutex);LayoutMeta m;m.definition.valid=!info->pNext && !info->flags && info->setLayoutCount<=descriptor_sets;m.definition.count=info->setLayoutCount;
         for(unsigned i=0;i<std::min(info->setLayoutCount,descriptor_sets);++i){auto s=d->sets.find(info->pSetLayouts[i]);if(s==d->sets.end() || !s->second.valid)m.definition.valid=false;else{m.definition.sets[i]=s->second.canonical;m.dynamic[i]=s->second.dynamic;}}
-        std::vector<std::array<std::uint64_t,3>> pushes;for(unsigned i=0;i<info->pushConstantRangeCount;++i){const auto& p=info->pPushConstantRanges[i];pushes.push_back({p.stageFlags,p.offset,p.size});}std::sort(pushes.begin(),pushes.end());std::vector<std::uint64_t> signature{2};for(auto& p:pushes)signature.insert(signature.end(),p.begin(),p.end());m.definition.push_signature=d->intern(signature);d->layouts[*layout]=m;}return r;}
+        std::vector<std::array<std::uint64_t,3>> pushes;for(unsigned i=0;i<info->pushConstantRangeCount;++i){const auto& p=info->pPushConstantRanges[i];pushes.push_back({p.stageFlags,p.offset,p.size});if(p.stageFlags&VK_SHADER_STAGE_COMPUTE_BIT)m.compute_push=p;}std::sort(pushes.begin(),pushes.end());std::vector<std::uint64_t> signature{2};for(auto& p:pushes)signature.insert(signature.end(),p.begin(),p.end());m.definition.push_signature=d->intern(signature);d->layouts[*layout]=m;}return r;}
 AA_EXPORT void VKAPI_CALL aaDestroyLayout(VkDevice h,VkPipelineLayout p,const VkAllocationCallbacks* a){auto d=device(key(h));{std::lock_guard<std::recursive_mutex> l(d->mutex);d->layouts.erase(p);}d->f.DestroyPipelineLayout(h,p,a);}
 AA_EXPORT VkResult VKAPI_CALL aaPool(VkDevice h,const VkCommandPoolCreateInfo* info,const VkAllocationCallbacks* a,VkCommandPool* pool){auto d=device(key(h));auto r=d->f.CreateCommandPool(h,info,a,pool);if(r==VK_SUCCESS){std::lock_guard<std::recursive_mutex> l(d->mutex);d->pools[*pool]=info->queueFamilyIndex;}return r;}
 AA_EXPORT void VKAPI_CALL aaDestroyPool(VkDevice h,VkCommandPool pool,const VkAllocationCallbacks* a){auto d=device(key(h));{std::lock_guard<std::recursive_mutex> l(d->mutex);command_generation.fetch_add(1,std::memory_order_release);for(auto i=d->commands.begin();i!=d->commands.end();)if(i->second.pool==pool)i=d->commands.erase(i);else++i;d->pools.erase(pool);}d->f.DestroyCommandPool(h,pool,a);}
@@ -826,6 +837,19 @@ AA_EXPORT void VKAPI_CALL aaViewportCount(VkCommandBuffer cb,unsigned count,cons
         if(s.depth_candidate && !s.depth_incomplete)trace("TAA VIEWPORT WITH COUNT count="+std::to_string(count));
         if(s.depth_candidate)s.depth_incomplete=true;d->f.CmdSetViewportWithCount(cb,count,viewports);
     }
+}
+void track_push(Device& d,VkCommandBuffer cb,VkPipelineLayout layout,VkShaderStageFlags stages,unsigned offset,unsigned size,const void* values,bool extended=false){
+    if(!(stages&VK_SHADER_STAGE_COMPUTE_BIT))return;
+    std::lock_guard<std::recursive_mutex> lock(d.mutex);auto& s=d.commands[cb];const auto meta=d.layouts.find(layout);
+    if(extended || stages!=VK_SHADER_STAGE_COMPUTE_BIT || meta==d.layouts.end() || !meta->second.definition.valid || meta->second.compute_push.stageFlags!=VK_SHADER_STAGE_COMPUTE_BIT){s.push_constants.invalidate();return;}
+    if(s.push_constants.record(meta->second.definition.push_signature,offset,size,values))s.push_layout=layout;
+}
+AA_EXPORT void VKAPI_CALL aaPushConstants(VkCommandBuffer cb,VkPipelineLayout layout,VkShaderStageFlags stages,unsigned offset,unsigned size,const void* values){
+    auto d=device(key(cb));d->f.CmdPushConstants(cb,layout,stages,offset,size,values);track_push(*d,cb,layout,stages,offset,size,values);
+}
+AA_EXPORT void VKAPI_CALL aaPushConstants2(VkCommandBuffer cb,const VkPushConstantsInfo* info){
+    auto d=device(key(cb));auto fn=(PFN_vkCmdPushConstants2)d->gdpa(d->handle,"vkCmdPushConstants2");if(!fn)fn=(PFN_vkCmdPushConstants2)d->gdpa(d->handle,"vkCmdPushConstants2KHR");fn(cb,info);
+    track_push(*d,cb,info->layout,info->stageFlags,info->offset,info->size,info->pValues,info->pNext!=nullptr);
 }
 AA_EXPORT void VKAPI_CALL aaBindSets(VkCommandBuffer cb,VkPipelineBindPoint bind,VkPipelineLayout layout,unsigned first,unsigned count,const VkDescriptorSet* sets,unsigned offsets,const unsigned* dynamic){auto d=device(key(cb));d->f.CmdBindDescriptorSets(cb,bind,layout,first,count,sets,offsets,dynamic);if(bind!=VK_PIPELINE_BIND_POINT_COMPUTE)return;
     std::lock_guard<std::recursive_mutex> l(d->mutex);auto& state=d->commands[cb].descriptors;auto p=d->layouts.find(layout);
@@ -927,6 +951,7 @@ PFN_vkVoidFunction hook(const char* name){
  H("CreateSampler",aaSampler) H("DestroySampler",aaDestroySampler)
  H("CreateCommandPool",aaPool) H("DestroyCommandPool",aaDestroyPool) H("AllocateCommandBuffers",aaAllocateCommands) H("FreeCommandBuffers",aaFreeCommands)
  H("BeginCommandBuffer",aaBegin) H("ResetCommandBuffer",aaReset) H("CmdBindPipeline",aaBindPipeline) H("CmdBindDescriptorSets",aaBindSets)
+ H("CmdPushConstants",aaPushConstants) H("CmdPushConstants2",aaPushConstants2) H("CmdPushConstants2KHR",aaPushConstants2)
  H("CmdSetViewport",aaViewport) H("CmdSetViewportWithCount",aaViewportCount) H("CmdSetViewportWithCountEXT",aaViewportCount)
  H("CmdBeginRendering",aaBeginRendering) H("CmdBeginRenderingKHR",aaBeginRendering) H("CmdEndRendering",aaEndRendering) H("CmdEndRenderingKHR",aaEndRendering)
  H("CmdDraw",aaDraw) H("CmdDrawIndexed",aaDrawIndexed) H("CmdDrawIndirect",aaDrawIndirect) H("CmdDrawIndexedIndirect",aaDrawIndexedIndirect) H("CmdExecuteCommands",aaExecute)

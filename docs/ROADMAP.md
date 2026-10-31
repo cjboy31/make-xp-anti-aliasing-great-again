@@ -45,5 +45,12 @@ CPU code passing on both architectures does not complete this workstream.
   camera-cut/history invalidation and stable cloud/object motion.
 - Per-view support for VR/multiple monitors after each presentation path is proven.
 
+The owner's motion-vector/TAA follow-up is now isolated on
+`experimental/temporal-aa`, based on the SMAA prototype. Original camera/depth
+GPU vectors, convention normalization and history gates are implemented and
+tested offscreen. TAA/SMAA T2x resolve, verified simulator jitter, per-object/cloud
+motion and live provider interoperation remain pending. See
+[the research and integration plan](MOTION-AND-TEMPORAL-AA.md).
+
 No dates, GPU support guarantees or installable rendering release are promised
 by this plan. Track implementation evidence in this repository's issues.

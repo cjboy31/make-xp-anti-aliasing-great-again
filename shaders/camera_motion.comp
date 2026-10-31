@@ -1,0 +1,45 @@
+#version 450
+// Original static-geometry reprojection kernel. No FSR, optical-flow or GPL code.
+layout(local_size_x=8,local_size_y=8) in;
+layout(std140,set=0,binding=0) uniform Camera {
+    mat4 inverse_current;
+    mat4 previous;
+    vec4 extent_current_jitter;
+    vec4 previous_jitter_clear;
+    vec4 state;
+} camera;
+layout(set=0,binding=1) uniform sampler2D scene_depth;
+layout(set=0,binding=2) uniform sampler2D trusted_static_mask;
+layout(rgba32f,set=0,binding=3) writeonly uniform image2D motion;
+
+bool finite4(vec4 v) { return !any(isnan(v)) && !any(isinf(v)); }
+vec4 calculate_motion(ivec2 pixel, ivec2 size) {
+    vec4 e = camera.extent_current_jitter, p = camera.previous_jitter_clear;
+    if (!finite4(e) || !finite4(p) || !finite4(camera.state) ||
+        camera.state.x != 1.0 || camera.state.y <= 0.0 ||
+        any(notEqual(e.xy,vec2(size))) || p.z < 0.0 || p.z > 1.0 || p.w < 0.0 || p.w > 0.01 ||
+        any(notEqual(textureSize(scene_depth,0),size)) || any(notEqual(textureSize(trusted_static_mask,0),size))) return vec4(0.0);
+    float mask = texelFetch(trusted_static_mask,pixel,0).r;
+    float depth = texelFetch(scene_depth,pixel,0).r;
+    if (isnan(mask) || isinf(mask) || mask < 0.9999 || mask > 1.0 ||
+        isnan(depth) || isinf(depth) || depth < 0.0 || depth > 1.0 || abs(depth-p.z) <= p.w) return vec4(0.0);
+    vec2 current_pixel = vec2(pixel)+0.5;
+    vec2 unjittered = current_pixel-e.zw;
+    vec4 world = camera.inverse_current*vec4(unjittered/e.xy*2.0-1.0,depth,1.0);
+    if (!finite4(world) || abs(world.w) <= camera.state.y) return vec4(0.0);
+    world = vec4(world.xyz/world.w,1.0);
+    vec4 clip = camera.previous*world;
+    if (!finite4(clip) || clip.w <= camera.state.y) return vec4(0.0);
+    vec3 previous_ndc = clip.xyz/clip.w;
+    vec2 previous_pixel = (previous_ndc.xy*0.5+0.5)*e.xy;
+    vec2 history_pixel = previous_pixel+p.xy;
+    if (previous_ndc.z < 0.0 || previous_ndc.z > 1.0 ||
+        any(lessThan(history_pixel,vec2(0.499))) || any(greaterThan(history_pixel,e.xy-0.499))) return vec4(0.0);
+    return vec4(previous_pixel-unjittered,previous_ndc.z,1.0);
+}
+void main() {
+    ivec2 pixel = ivec2(gl_GlobalInvocationID.xy), size = imageSize(motion);
+    if (any(greaterThanEqual(pixel,size))) return;
+    // One output write per pixel, including invalid pixels; no stale motion.
+    imageStore(motion,pixel,calculate_motion(pixel,size));
+}

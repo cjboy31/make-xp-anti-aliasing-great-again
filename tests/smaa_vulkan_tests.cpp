@@ -1,6 +1,7 @@
 // Offscreen correctness fixture. Synchronous transfers here are not a live
 // simulator fast path or an FPS benchmark. All images are original test patterns.
 #include "native_aa/smaa_pipeline.hpp"
+#include "native_aa/camera_motion_pipeline.hpp"
 #include "Textures/AreaTex.h"
 #include "Textures/SearchTex.h"
 #include <algorithm>
@@ -79,7 +80,8 @@ struct Context {
                 std::vector<VkQueueFamilyProperties> queues(families);
                 vkGetPhysicalDeviceQueueFamilyProperties(candidate, &families, queues.data());
                 for (unsigned i = 0; i < families; ++i) {
-                    if (queues[i].queueCount && (queues[i].queueFlags & VK_QUEUE_GRAPHICS_BIT)) {
+                    const VkQueueFlags required = VK_QUEUE_GRAPHICS_BIT | VK_QUEUE_COMPUTE_BIT;
+                    if (queues[i].queueCount && (queues[i].queueFlags & required) == required) {
                         physical = candidate; family = i; break;
                     }
                 }
@@ -144,10 +146,10 @@ struct Context {
 struct Buffer {
     Context& c; VkBuffer handle{}; VkDeviceMemory memory{}; void* mapped{};
     VkDeviceSize capacity{}, allocation{}; bool coherent = false;
-    Buffer(Context& context, VkDeviceSize bytes) : c(context), capacity(bytes) {
+    Buffer(Context& context, VkDeviceSize bytes, VkBufferUsageFlags usage = VK_BUFFER_USAGE_TRANSFER_SRC_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT) : c(context), capacity(bytes) {
         try {
             VkBufferCreateInfo info{VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO}; info.size = bytes;
-            info.usage = VK_BUFFER_USAGE_TRANSFER_SRC_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT;
+            info.usage = usage;
             check(vkCreateBuffer(c.device, &info, nullptr, &handle), "Create test staging");
             VkMemoryRequirements requirements{}; vkGetBufferMemoryRequirements(c.device, handle, &requirements);
             const auto index = c.type(requirements.memoryTypeBits, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT);
@@ -178,13 +180,14 @@ struct Image {
     Context& c; VkImage handle{}; VkDeviceMemory memory{}; VkImageView view{}, srgb{};
     VkExtent2D extent{}; VkFormat format{}; unsigned pixel_bytes{}; VkDeviceSize allocation{};
     VkImageLayout layout = VK_IMAGE_LAYOUT_UNDEFINED;
-    Image(Context& context, VkExtent2D size, VkFormat f, unsigned bytes, bool attachment, bool mutable_srgb = false)
+    Image(Context& context, VkExtent2D size, VkFormat f, unsigned bytes, bool attachment, bool mutable_srgb = false, bool storage = false)
         : c(context), extent(size), format(f), pixel_bytes(bytes) {
         try {
             need(size.width && size.height && size.width <= 4096 && size.height <= 4096, "Fixture extent out of bounds");
             VkFormatProperties properties{}; vkGetPhysicalDeviceFormatProperties(c.physical, f, &properties);
             VkFormatFeatureFlags required = VK_FORMAT_FEATURE_SAMPLED_IMAGE_BIT | VK_FORMAT_FEATURE_SAMPLED_IMAGE_FILTER_LINEAR_BIT;
             if (attachment) required |= VK_FORMAT_FEATURE_COLOR_ATTACHMENT_BIT;
+            if (storage) required |= VK_FORMAT_FEATURE_STORAGE_IMAGE_BIT;
             need((properties.optimalTilingFeatures & required) == required, "Required image format features unavailable");
             VkImageCreateInfo info{VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO};
             info.flags = mutable_srgb ? VK_IMAGE_CREATE_MUTABLE_FORMAT_BIT : 0;
@@ -192,6 +195,7 @@ struct Image {
             info.mipLevels = info.arrayLayers = 1; info.samples = VK_SAMPLE_COUNT_1_BIT; info.tiling = VK_IMAGE_TILING_OPTIMAL;
             info.usage = VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT;
             if (attachment) info.usage |= VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
+            if (storage) info.usage |= VK_IMAGE_USAGE_STORAGE_BIT;
             check(vkCreateImage(c.device, &info, nullptr, &handle), "Create test image");
             VkMemoryRequirements requirements{}; vkGetImageMemoryRequirements(c.device, handle, &requirements);
             VkMemoryAllocateInfo alloc{VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO}; alloc.allocationSize = requirements.size;
@@ -215,7 +219,8 @@ struct Image {
         switch (l) {
         case VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL: return {VK_PIPELINE_STAGE_TRANSFER_BIT, VK_ACCESS_TRANSFER_WRITE_BIT};
         case VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL: return {VK_PIPELINE_STAGE_TRANSFER_BIT, VK_ACCESS_TRANSFER_READ_BIT};
-        case VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL: return {VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, VK_ACCESS_SHADER_READ_BIT};
+        case VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL: return {VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT | VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_ACCESS_SHADER_READ_BIT};
+        case VK_IMAGE_LAYOUT_GENERAL: return {VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT};
         case VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL: return {VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT, VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT};
         default: return {VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, 0};
         }
@@ -295,6 +300,61 @@ struct Fixture {
         return output.read(staging);
     }
 };
+
+unsigned camera_motion_checks(Context& c, const std::filesystem::path& shaders) {
+    const VkExtent2D extent{65,49}; const auto count = std::size_t{extent.width} * extent.height;
+    Buffer staging(c,count*16), constants(c,sizeof(native_aa::CameraMotionData),VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT);
+    Image depth(c,extent,VK_FORMAT_R32_SFLOAT,4,false), mask(c,extent,VK_FORMAT_R32_SFLOAT,4,false);
+    Image output(c,extent,VK_FORMAT_R32G32B32A32_SFLOAT,16,false,false,true);
+    native_aa::CameraMotionPipeline pipeline(c.device,extent,constants.handle,depth.view,mask.view,output.view,shaders/"camera-motion.comp.spv");
+    std::vector<float> depths(count), masks(count); unsigned checked_pixels = 0;
+    const auto reserved = c.allocated_bytes;
+    for (unsigned test = 0; test < 11; ++test) {
+        native_aa::CameraMotionData data;
+        data.inverse_current = data.previous = {1,0,0,0, 0,1,0,0, 0,0,1,0, 0,0,0,1};
+        data.extent_current_jitter = {float(extent.width),float(extent.height),0,0};
+        data.previous_jitter_clear = {0,0,1,0.000001f}; data.state = {1,0.000001f,0,0};
+        if (test == 1) { data.previous[12] = 0.1f; data.previous[13] = -0.08f; }
+        if (test == 2) { data.extent_current_jitter[2] = 0.25f; data.extent_current_jitter[3] = -0.25f;
+            data.previous_jitter_clear[0] = -0.25f; data.previous_jitter_clear[1] = 0.25f; }
+        if (test == 3) data.previous_jitter_clear[2] = 0; // Reverse-Z sky clear.
+        if (test == 4) data.state[0] = 0; // Reset must overwrite last frame's valid vectors.
+        if (test == 5) data.previous[15] = -1; // Behind previous camera.
+        if (test == 6) data.previous[0] = std::numeric_limits<float>::quiet_NaN();
+        if (test >= 8) {
+            const float a = test == 10 ? -0.1f/9.9f : 10.0f/9.9f;
+            const float b = test == 10 ? 1.0f/9.9f : -1.0f/9.9f;
+            data.inverse_current = {1,0,0,0, 0,1,0,0, 0,0,0,1/b, 0,0,1,-a/b};
+            data.previous = {1,0,0,0, 0,1,0,0, 0,0,a,1, -0.05f,0,b,0};
+            if (test == 10) data.previous_jitter_clear[2] = 0;
+            if (test == 9) {
+                const float co = std::cos(0.1f), si = std::sin(0.1f);
+                data.previous = {co,0,-a*si,-si, 0,1,0,0, si,0,a*co,co, 0,0,b,0};
+            }
+        }
+        for (std::size_t i = 0; i < count; ++i) {
+            depths[i] = i % 11 == 0 ? data.previous_jitter_clear[2] : 0.3f + float(i % 16) / 100;
+            if (i % 19 == 0) depths[i] = std::numeric_limits<float>::quiet_NaN();
+            masks[i] = test == 7 || i % 7 == 0 ? 0.0f : 1.0f;
+        }
+        depth.upload(staging,depths.data(),depths.size()*sizeof(float)); mask.upload(staging,masks.data(),masks.size()*sizeof(float));
+        std::memcpy(constants.mapped,&data,sizeof(data)); constants.sync(true);
+        c.submit([&](auto cb) { output.transition(cb,VK_IMAGE_LAYOUT_GENERAL); pipeline.record(cb); });
+        const auto bytes = output.read(staging); std::vector<float> result(count*4);
+        std::memcpy(result.data(),bytes.data(),bytes.size());
+        for (unsigned y = 0; y < extent.height; ++y) for (unsigned x = 0; x < extent.width; ++x) {
+            const auto i = std::size_t{y} * extent.width+x;
+            const auto expected = native_aa::reproject_static(data,x,y,depths[i],masks[i] == 1);
+            for (unsigned ch = 0; ch < 4; ++ch) need(std::isfinite(result[i*4+ch]),"Non-finite GPU camera motion");
+            need(result[i*4+3] == (expected ? 1.0f : 0.0f),"CPU/GPU motion validity mismatch");
+            const std::array<float,3> wanted{expected ? expected->pixels.x : 0,expected ? expected->pixels.y : 0,expected ? expected->previous_depth : 0};
+            for (unsigned ch = 0; ch < 3; ++ch) need(std::abs(result[i*4+ch]-wanted[ch]) < 0.0005f,"Camera-motion readback differs from independent CPU oracle");
+            ++checked_pixels;
+        }
+        need(c.allocated_bytes == reserved,"Motion recording grew owned allocations");
+    }
+    return checked_pixels;
+}
 
 double linear(double srgb) { return srgb <= 0.04045 ? srgb / 12.92 : std::pow((srgb + 0.055) / 1.055, 2.4); }
 unsigned char encoded(double value) {
@@ -422,14 +482,17 @@ int main(int argc, char** argv) {
             need(context.allocated_bytes == 0, "Fixture resources retained after resize/teardown");
         }
         need(improved >= 36 && total_after < total_before * 0.85, "Insufficient synthetic edge-reference improvement");
+        const auto motion_pixels = camera_motion_checks(context,shaders);
+        need(context.allocated_bytes == 0,"Camera-motion fixture retained allocations");
         context.close(); need(context.errors == 0, "Vulkan validation errors occurred"); need(static_cast<bool>(metrics), "Metrics output failed");
         std::ofstream report(evidence / "result.json");
-        report << "{\n  \"status\": \"PASS\",\n  \"scope\": \"offscreen synthetic SDR SMAA 1x only; no simulator integration\",\n"
+        report << "{\n  \"status\": \"PASS\",\n  \"scope\": \"offscreen synthetic SDR SMAA and static camera motion; no simulator integration or TAA resolve\",\n"
                << "  \"device\": " << json_string(context.properties.deviceName) << ",\n  \"validation_enabled\": " << (validation ? "true" : "false")
                << ",\n  \"validation_errors\": " << context.errors << ",\n  \"validation_warnings\": " << context.warnings
                << ",\n  \"vulkan_api_version_raw\": " << context.properties.apiVersion << ",\n  \"driver_version_raw\": " << context.properties.driverVersion
                << ",\n  \"rendered_frames\": " << frames << ",\n  \"improved_edge_cases\": " << improved
                << ",\n  \"edge_cases\": 45,\n  \"aggregate_linear_mse_ratio\": " << total_after / total_before
+               << ",\n  \"camera_motion_pixels_checked\": " << motion_pixels
                << ",\n  \"peak_fixture_image_and_staging_allocation_bytes\": " << peak_owned
                << ",\n  \"allocation_metric_excludes_driver_and_pipeline_memory\": true\n}\n";
         need(static_cast<bool>(report), "Report output failed");

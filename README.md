@@ -10,6 +10,11 @@ synthetic test images. The portable C++ core checks frame eligibility. Neither
 component injects into X-Plane or changes simulator settings. Read
 [prototype scope and reproduction](docs/SMAA-PROTOTYPE.md) before testing.
 
+The temporal-AA experiment adds original GPU camera/depth reprojection, motion
+convention normalization and history reset gates. It does **not** yet accumulate
+TAA history or consume a live simulator motion buffer. See
+[motion research and AA alternatives](docs/MOTION-AND-TEMPORAL-AA.md).
+
 ## Direction
 
 - Start with native-resolution **SMAA 1x** spatial AA. It does not need motion

@@ -7,8 +7,8 @@ the simulator. This mod works on its own and does not use FSR or frame generatio
 
 ## Download and install
 
-- [Windows alpha](https://github.com/cjboy31/make-xp-anti-aliasing-great-again/releases/tag/v0.3.0-alpha): extract the ZIP, close X-Plane, and run **NativeAA-Setup.exe**. Select your X-Plane folder.
-- [Linux beta](https://github.com/cjboy31/make-xp-anti-aliasing-great-again/releases/tag/v0.3.0-linux-beta.1): extract the package and run **./install.sh**. Linux flight testing is still in progress.
+- [Windows alpha](https://github.com/cjboy31/make-xp-anti-aliasing-great-again/releases/tag/v0.3.1-alpha): extract the ZIP, close X-Plane, and run **NativeAA-Setup.exe**. Select your X-Plane folder.
+- [Linux beta](https://github.com/cjboy31/make-xp-anti-aliasing-great-again/releases/tag/v0.3.1-linux-beta.1): extract the package and run **./install.sh**. Linux flight testing is still in progress.
 - Mac rendering is not available.
 
 Launch X-Plane normally. Open **Plugins > Native AA > Open AA controls**.
@@ -48,10 +48,10 @@ shimmer changes while moving. [Capture details](docs/showcase/README.md).
 [Setup and controls](docs/CONTROLS.md) · [Linux requirements](docs/LINUX-BETA-INSTALLATION.txt)
 · [Join Discord](https://discord.gg/yh396QNgHZ) · [Report a problem](https://github.com/cjboy31/make-xp-anti-aliasing-great-again/issues)
 
-The next UI package adds clearer **?** help, an in-sim changelog and a separate
-optional [shadow script](extras/shadows/README.txt). Use the instructions in your
-download; older packages do not gain these controls until updated.
+Version 0.3.1 includes **?** help, an in-sim **Changelog** and a separate
+optional [shadow script](extras/shadows/README.txt). The script starts Off.
+Use the instructions in your download when updating older versions.
 
-For developers: [Build](docs/CONTROLS.md) · [Validation](docs/VALIDATION.md) ·
+For developers: [Build](docs/BUILD-AND-VALIDATION.md) · [Validation](docs/VALIDATION.md) ·
 [Motion research](docs/MOTION-SOURCES-20261031.md) · [Contributing](CONTRIBUTING.md).
 Original code is MIT. [Third-party notices](THIRD_PARTY.md) are included.

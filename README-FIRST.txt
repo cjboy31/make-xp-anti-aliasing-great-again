@@ -1,4 +1,4 @@
-MAKE XP ANTI-ALIASING GREAT AGAIN — 0.3.2-alpha
+MAKE XP ANTI-ALIASING GREAT AGAIN — 0.3.3-alpha
 Windows x64 alpha for X-Plane 12.4.4 / Vulkan
 
 INSTALL
@@ -40,6 +40,12 @@ Use Uninstall in setup to remove recorded files. Saved choices are kept.
 The installer leaves your output, menu size, controller and camera settings alone.
 
 HELP AND PLATFORM STATUS
+This version corrects a case where Zink's normal drawing could make AA bypass.
+If it still says Bypassed, share the exact warning, newest Output/NativeAA log
+and matching X-Plane Log.txt. Full input alone cannot clear that warning.
+Browser report preview: https://xplane-mod-log-reports.cjboy31.chatgpt.site/
+Choose Native AA and enter the mod version. Check the filtered preview before
+sending. Native AA does not automatically upload logs.
 Check for AA ACTIVE or TAA ACTIVE after a flight loads. Read any waiting or
 inactive message. Logs for the current session are in Output/NativeAA.
 Linux has a separate beta package; real Linux flights still need testing.

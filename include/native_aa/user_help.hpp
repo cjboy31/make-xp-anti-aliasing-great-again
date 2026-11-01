@@ -30,7 +30,12 @@ inline const char* option_help(int action) {
     }
 }
 inline const char* changelog_text() {
-    return "#Version 0.3.2 - Panel refresh\n"
+    return "#Version 0.3.3 - Compatibility\n"
+        "Fix a case where the Zink plugin bridge could make AA stop processing.\n"
+        "Read the specific warning if AA is still bypassed. Full input alone cannot clear a compatibility warning.\n"
+        "Share the newest Output/NativeAA log and matching X-Plane Log.txt when asking for help.\n"
+        "No new AA method or FPS gain is claimed. Some Zink/add-on combinations still need flight testing.\n\n"
+        "#Version 0.3.2 - Panel refresh\n"
         "The panel groups AA methods, motion settings and next-launch choices in four tabs.\n"
         "The status strip shows what the renderer is doing. The footer shows fresh session counts.\n"
         "Use ? for setting help. Choose On or Off to compare the same view.\n\n"

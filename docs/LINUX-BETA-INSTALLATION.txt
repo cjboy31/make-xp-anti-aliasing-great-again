@@ -1,4 +1,4 @@
-MAKE XP ANTI-ALIASING GREAT AGAIN — 0.3.2-linux-beta.1
+MAKE XP ANTI-ALIASING GREAT AGAIN — 0.3.3-linux-beta.1
 Native Linux x86_64 beta for X-Plane 12.4.4 / Vulkan
 
 THIS IS A BETA

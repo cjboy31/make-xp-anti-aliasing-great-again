@@ -13,7 +13,7 @@ import tarfile
 repo = Path(__file__).resolve().parent.parent
 build = Path(sys.argv[1]).resolve()
 output = Path(sys.argv[2]).resolve()
-name = 'Make-XP-AA-0.3.3-linux-beta.1-Linux-x86_64'
+name = 'Make-XP-AA-2.0.0-linux-beta.1-Linux-x86_64'
 stage = output / name
 stage.mkdir(parents=True, exist_ok=False)
 sha = lambda path: hashlib.sha256(path.read_bytes()).hexdigest()
@@ -34,13 +34,13 @@ files = {
     'NativeAA/notices/FXAA-source-and-BSD-notice.txt': repo / 'third_party/fxaa/Fxaa3_11.h',
     'NativeAA/notices/FXAA-Intel-Apache.txt': repo / 'third_party/fxaa/CMAA2-license.txt',
     'NativeAA/notices/XPLM-SDK-license.txt': repo / 'third_party/XPLM-SDK-license.txt',
-    'docs/MOTION-SHIMMER-COMBINATIONS.md': repo / 'docs/MOTION-SHIMMER-COMBINATIONS.md',
+    'docs/developer/MOTION-SHIMMER-COMBINATIONS.md': repo / 'docs/developer/MOTION-SHIMMER-COMBINATIONS.md',
     'extras/shadows/make XP shadows great again - enhanced edition.lua': repo / 'extras/shadows/make XP shadows great again - enhanced edition.lua',
     'extras/shadows/README.txt': repo / 'extras/shadows/README.txt',
     'docs/ZINK-COMPATIBILITY.md': repo / 'docs/ZINK-COMPATIBILITY.md',
     'docs/CONTROLS.md': repo / 'docs/CONTROLS.md',
-    'docs/RELEASE-0.3.3.md': repo / 'docs/RELEASE-0.3.3.md',
-    'docs/RENDERER-SELECTION.md': repo / 'docs/RENDERER-SELECTION.md',
+    'CHANGELOG.md': repo / 'CHANGELOG.md',
+    'docs/developer/RENDERER-SELECTION.md': repo / 'docs/developer/RENDERER-SELECTION.md',
     'validation/linux-layer-test-receipt.json': build / 'linux-layer-test-receipt.json',
 }
 shaders = [p for p in (build / 'shaders').iterdir() if re.fullmatch(r'(live-smaa-[0-3]-[0-2]|fxaa-[02]|native-taa|native-depth-(1|ms))\.comp\.spv', p.name)]
@@ -56,7 +56,7 @@ for relative, source in files.items():
 (stage / 'install.sh').write_text('#!/bin/sh\nexec python3 "$(dirname "$0")/install-linux.py" "$@"\n')
 (stage / 'install.sh').chmod(0o755)
 source_commit = subprocess.check_output(['git', '-C', str(repo), 'rev-parse', 'HEAD'], text=True).strip()
-manifest = dict(product='Make XP Anti-Aliasing Great Again', version='0.3.3-linux-beta.1',
+manifest = dict(product='Make XP Anti-Aliasing Great Again', version='2.0.0-linux-beta.1',
                 platform='Linux-x86_64', sourceCommit=source_commit,
                 layerSHA256=receipt['layerSHA256'], pluginSHA256=sha(build / 'lin.xpl'),
                 files=[dict(path=str(p.relative_to(stage)), sha256=sha(p)) for p in sorted(stage.rglob('*')) if p.is_file()])

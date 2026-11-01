@@ -116,7 +116,7 @@ The layer additionally requires an exact `NATIVE_AA_EXE` match,
 and a control file containing `ON`. Setting that file to `OFF` bypasses future
 scene recordings without restarting. That file is a developer comparison
 control. The new independent in-sim panel instead uses a versioned process-local
-channel and saves validated choices; see [the controls guide](CONTROLS.md).
+channel and saves validated choices; see [the controls guide](../CONTROLS.md).
 
 The owner's harness backs up simulator preferences, temporarily selects full
 native input scale, and restores that one setting after a normal simulator exit

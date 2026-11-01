@@ -58,7 +58,7 @@ Motion/TAA research references (not imported): Playdead temporal AA (MIT),
 Vihaan2012-cmyk's X-Plane motion-vector project (GPL-3.0), JakobPCoder's motion
 estimation (CC BY-NC 4.0), and Intel CMAA2 (Apache-2.0). The original motion
 kernel here is not copied from any of those implementations. See
-[research decisions](docs/MOTION-AND-TEMPORAL-AA.md) for direct source links and
+[research decisions](docs/developer/MOTION-AND-TEMPORAL-AA.md) for direct source links and
 the distinction between camera vectors, per-object velocity and optical flow.
 
 ## Linux build/runtime dependencies

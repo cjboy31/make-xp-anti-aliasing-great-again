@@ -1,6 +1,6 @@
 # Native AA - in-sim controls (Windows alpha / Linux beta)
 
-Every setting has a **?** button explaining what it does. Open **Changelog** to read changes. The optional shadow script is separate; see [its instructions](../extras/shadows/README.txt).
+Every setting has a **?** button explaining what it does. Open **Changelog** to read changes. The optional shadow script is separate; see [its instructions](../../extras/shadows/README.txt).
 
 
 Open **Plugins > Native AA > Open AA controls**. Enable or disable processing
@@ -17,7 +17,7 @@ close X-Plane, run **NativeAA-Setup.exe** and select the folder containing
 `X-Plane.exe`. Your usual or third-party launcher can then start the simulator.
 Use the **Uninstall** button in **NativeAA-Setup.exe** with X-Plane closed to remove the recorded
 unchanged plugin files and its own Vulkan discovery value. Settings are retained.
-See [README-FIRST.txt](../README-FIRST.txt) for full setup and troubleshooting.
+See [README-FIRST.txt](../../README-FIRST.txt) for full setup and troubleshooting.
 
 Developer build order (Windows x64): `Build-VulkanChecks.ps1`,
 `Build-LivePrototype.ps1`, `Test-LivePrototype.ps1`, `Test-Activation.ps1`,

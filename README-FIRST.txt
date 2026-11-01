@@ -1,9 +1,11 @@
-MAKE XP ANTI-ALIASING GREAT AGAIN — 0.3.3-alpha
-Windows x64 alpha for X-Plane 12.4.4 / Vulkan
+MAKE XP ANTI-ALIASING GREAT AGAIN — 2.0.0-beta.windows.1
+Windows x64 BETA for X-Plane 12.4.4 (features still being tested)
 
 INSTALL
 1. Close X-Plane normally. Extract ALL files from the Windows ZIP together.
-2. Run NativeAA-Setup.exe and select the X-Plane folder containing X-Plane.exe.
+2. Run NativeAA-Setup.exe. It finds X-Plane 12 for you; check the folder and
+   click Install / update. (If it is blank, click Browse and pick the folder
+   that contains X-Plane.exe.)
 3. Launch X-Plane normally, including through your usual third-party launcher.
 4. Open Plugins > Native AA > Open AA controls.
 
@@ -11,7 +13,7 @@ STARTING SETTINGS
 Set X-Plane input scale to Off / Full and keep your normal output resolution.
 Turn X-Plane FXAA Off for comparison. You may keep MSAA; try 2x to begin.
 Start with SMAA High. Use On/Off to compare the same view. Choices save live.
-Every choice has a ? help button. Open Changelog to read changes.
+Point at any ? to read help. Click ? to pin it. Open Changelog to read changes.
 
 AA METHODS
 SMAA smooths jagged outlines. FXAA is fast but can soften fine detail.
@@ -20,7 +22,8 @@ TAA + SMAA / FXAA adds a second edge-smoothing step. Start Finishing strength
 at 50%. Extra smoothing costs graphics time and can soften the picture.
 Motion matching helps TAA track the picture. Movement is estimated; it cannot
 track every aircraft, propeller or cloud. Start Shimmer reduction at 50% and
-Frame history at 85%. No setting removes every flickering edge.
+Frame history at 85%. History detail: Sharper (new in 2.0) keeps more detail
+while moving; choose Classic to compare. No setting removes every flickering edge.
 Return any test view to Normal view before flying.
 
 IF YOU ALSO HAVE FSR

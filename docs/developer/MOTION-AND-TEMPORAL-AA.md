@@ -22,7 +22,7 @@ motion with rejection, not general native object/cloud velocity.
 These are research references, not bundled plug-ins or endorsements. Public code
 availability does not mean all files share our original MIT license. The only
 imported graphics algorithms are the separately attributed SMAA and FXAA
-sources listed in [the dependency notices](../THIRD_PARTY.md).
+sources listed in [the dependency notices](../../THIRD_PARTY.md).
 
 ## Motion incorporated now
 

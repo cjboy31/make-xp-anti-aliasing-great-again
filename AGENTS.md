@@ -32,7 +32,7 @@ third-party launcher activation. Keep controller/camera bindings unchanged.
 
 ## Technical evidence
 
-Read docs/TAA-LIVE-VALIDATION.md, docs/CONTROLS.md and platform-specific validation
+Read docs/developer/TAA-LIVE-VALIDATION.md, docs/CONTROLS.md and platform-specific validation
 notes before rendering changes. Keep exact scene/depth/shader admission, native
 state restoration, pending GPU ownership, bounded resource budgets and safe
 bypass. A selected mode or plugin presence is not proof of GPU completion.
@@ -45,3 +45,23 @@ Linux flights, HDR/PQ, VR/multi-view, other GPUs and long-flight behavior as suc
 ## Owner update: 2026-10-31
 
 Use short labels and ? help for every setting at an eighth-grade reading level. Add an in-sim changelog instead of videos. Describe only delivered features on the main page; keep technical research in docs. Optional shadow Lua stays separate and Off by default. Research installable motion sources, avoid stacking scene renderers, and prioritize measured shimmer reduction after this UI/update work.
+
+
+## Owner update: 2026-11-01 (v2)
+
+- Two public channels only: **Release Candidates** (tested and verified
+  features, `main`) and **Betas** (in development/testing, `beta`). Saved
+  updater keys stay `release`/`beta`. See docs/developer/RELEASING.md (FSR) and
+  docs/developer/TEST-CHANNEL.md (both).
+- A private **Test** channel comes first: `test` branch plus DRAFT releases
+  tagged `test-<version>.<n>` via `Publish-TestBuild.ps1`. Claude prepares
+  changes; ChatGPT live-tests drafts on the owner's PC with the checklist in
+  docs/developer/TEST-CHANNEL.md and reports PROMOTE TO BETAS or NEEDS FIX.
+- PIPELINE.md is the shared work queue: type (Feature / QoL / Optimization /
+  Bug) and priority (P0 regression, P1 extends the last update, P2 researched,
+  P3 exploratory). Add incoming ideas and bugs there; keep "Shipped" honest.
+- Help in the in-sim panels is a hover card on "?" (click pins); do not
+  reintroduce help pages that replace the settings view.
+- The FSR repository is renamed `xplane12-fsr-framegen` (no "vulkan" in the
+  name). GitHub redirects the old URL; keep the updater's repository constant
+  in sync with the actual name.

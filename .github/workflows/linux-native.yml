@@ -63,7 +63,7 @@ jobs:
         run: |
           export VK_ICD_FILENAMES="$(find /usr/share/vulkan/icd.d -name '*lvp*.json' -print -quit)"
           python3 tools/package_linux.py build-linux dist-linux
-          python3 tools/test_linux_package.py dist-linux/Make-XP-AA-0.3.3-linux-beta.1-Linux-x86_64.tar.gz build-linux/native_aa_activation_probe
+          python3 tools/test_linux_package.py dist-linux/Make-XP-AA-2.0.0-linux-beta.1-Linux-x86_64.tar.gz build-linux/native_aa_activation_probe
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: Native-AA-Linux-beta-package

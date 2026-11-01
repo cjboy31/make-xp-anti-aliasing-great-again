@@ -32,7 +32,12 @@ inline const char* option_help(int action) {
     }
 }
 inline const char* changelog_text() {
-    return "#Version 0.3.3 - Compatibility\n"
+    return "#Version 2.0 - Beta\n"
+        "Sharper history: a new History detail choice in Motion & shimmer keeps more detail while you move and stops bright lights from flickering. Choose Classic to compare.\n"
+        "Hover help: point at any ? to read help right there. Click ? to pin it.\n"
+        "Setup now finds X-Plane 12 for you on Windows and Linux.\n"
+        "This is a Beta. Report anything that looks worse than Classic.\n\n"
+        "#Version 0.3.3 - Compatibility\n"
         "Fix a case where the Zink plugin bridge could make AA stop processing.\n"
         "Read the specific warning if AA is still bypassed. Full input alone cannot clear a compatibility warning.\n"
         "Share the newest Output/NativeAA log and matching X-Plane Log.txt when asking for help.\n"

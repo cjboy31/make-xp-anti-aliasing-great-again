@@ -25,4 +25,4 @@ Check the actual view before deciding that a larger size helps.
 Remove the Lua file with X-Plane closed to uninstall. It never edits settings.txt,
 controller settings, weather or either mod's AA settings. No FlyWithLua binary
 is included. Windows/Linux/Mac use their own FlyWithLua build; actual simulator
-tests are listed in docs/SHADOW-RESEARCH.md, not assumed from the script's code.
+tests are listed in docs/developer/SHADOW-RESEARCH.md, not assumed from the script's code.

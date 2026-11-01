@@ -168,6 +168,7 @@ struct SamplerMeta {std::uint64_t canonical{};bool valid=false;};
 struct LayoutMeta {DescriptorLayout definition;std::array<unsigned,descriptor_sets> dynamic{};VkPushConstantRange compute_push{};};
 struct Commands {
     VkCommandPool pool{};unsigned family{};bool primary=false,unsupported=false;
+    const char* unsupported_reason="unverified command-state extension or secondary execution";
     VkPipeline compute{},graphics{};DescriptorState descriptors;
     ComputePushShadow push_constants;VkPipelineLayout push_layout{};
     std::uint64_t compute_epoch=0;
@@ -203,6 +204,9 @@ struct Device {
     std::unordered_map<VkDescriptorSetLayout,SetMeta> sets;
     std::unordered_map<VkSampler,SamplerMeta> samplers;
     std::unordered_map<VkPipelineLayout,LayoutMeta> layouts;
+    // A graphics-only push template does not disturb the compute state that
+    // AA must restore. Keep its bind point; unknown/compute templates bypass.
+    std::unordered_map<VkDescriptorUpdateTemplate,VkPipelineBindPoint> push_templates;
     std::map<std::vector<std::uint64_t>,std::uint64_t> canonical;
     std::unordered_map<VkCommandPool,unsigned> pools;
     std::unordered_map<VkCommandBuffer,Commands> commands;
@@ -676,7 +680,7 @@ void finish_scene(Device& d,VkCommandBuffer cb,Commands& s) noexcept {
         if(!d.live){d.reason("live control OFF");return;}
         if(!d.settings.strength){d.reason("AA strength is zero");return;}
         if(!s.primary){d.reason("scene recorded inside unsupported secondary buffer");return;}
-        if(s.unsupported){d.reason("unverified command-state extension or secondary execution");return;}
+        if(s.unsupported){d.reason(s.unsupported_reason);return;}
         if(!s.descriptors.supported){d.reason("unsupported compute descriptor layout/state");return;}
         if(!s.push_constants.supported()){d.reason("unsupported compute push-constant updates; native scene retained");return;}
         if(!restorable_compute(d,s)){d.reason("native compute state cannot be restored safely");return;}
@@ -875,7 +879,8 @@ AA_EXPORT void VKAPI_CALL aaDestroyPool(VkDevice h,VkCommandPool pool,const VkAl
 AA_EXPORT VkResult VKAPI_CALL aaAllocateCommands(VkDevice h,const VkCommandBufferAllocateInfo* info,VkCommandBuffer* cb){auto d=device(key(h));auto r=d->f.AllocateCommandBuffers(h,info,cb);if(r==VK_SUCCESS){std::lock_guard<std::recursive_mutex> l(d->mutex);for(unsigned i=0;i<info->commandBufferCount;++i){Commands state;state.pool=info->commandPool;state.family=d->pools[info->commandPool];state.primary=info->level==VK_COMMAND_BUFFER_LEVEL_PRIMARY;d->commands[cb[i]]=state;}}return r;}
 AA_EXPORT void VKAPI_CALL aaFreeCommands(VkDevice h,VkCommandPool pool,unsigned count,const VkCommandBuffer* cb){auto d=device(key(h));{std::lock_guard<std::recursive_mutex> l(d->mutex);command_generation.fetch_add(1,std::memory_order_release);for(unsigned i=0;i<count;++i)d->commands.erase(cb[i]);}d->f.FreeCommandBuffers(h,pool,count,cb);}
 void reset(Commands& s){auto pool=s.pool;auto family=s.family;auto primary=s.primary;s={};s.pool=pool;s.family=family;s.primary=primary;}
-AA_EXPORT VkResult VKAPI_CALL aaBegin(VkCommandBuffer cb,const VkCommandBufferBeginInfo* info){auto d=device(key(cb));auto r=d->f.BeginCommandBuffer(cb,info);if(r==VK_SUCCESS){std::lock_guard<std::recursive_mutex> l(d->mutex);auto& s=d->commands[cb];reset(s);s.one_time=(info->flags&VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT)!=0;if(info->flags&VK_COMMAND_BUFFER_USAGE_SIMULTANEOUS_USE_BIT)s.unsupported=true;}return r;}
+void unsupported(Commands& s,const char* reason){if(!s.unsupported)s.unsupported_reason=reason;s.unsupported=true;}
+AA_EXPORT VkResult VKAPI_CALL aaBegin(VkCommandBuffer cb,const VkCommandBufferBeginInfo* info){auto d=device(key(cb));auto r=d->f.BeginCommandBuffer(cb,info);if(r==VK_SUCCESS){std::lock_guard<std::recursive_mutex> l(d->mutex);auto& s=d->commands[cb];reset(s);s.one_time=(info->flags&VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT)!=0;if(info->flags&VK_COMMAND_BUFFER_USAGE_SIMULTANEOUS_USE_BIT)unsupported(s,"AA cannot process shared drawing commands yet (simultaneous command-buffer use)");}return r;}
 AA_EXPORT VkResult VKAPI_CALL aaReset(VkCommandBuffer cb,VkCommandBufferResetFlags flags){auto d=device(key(cb));auto r=d->f.ResetCommandBuffer(cb,flags);if(r==VK_SUCCESS){std::lock_guard<std::recursive_mutex> l(d->mutex);reset(d->commands[cb]);}return r;}
 AA_EXPORT void VKAPI_CALL aaBindPipeline(VkCommandBuffer cb,VkPipelineBindPoint bind,VkPipeline pipeline){auto d=device(key(cb));d->f.CmdBindPipeline(cb,bind,pipeline);auto& s=command(*d,cb);if(bind==VK_PIPELINE_BIND_POINT_COMPUTE){std::lock_guard<std::recursive_mutex> lock(d->mutex);s.compute=pipeline;const auto epoch=d->pipeline_epochs.find(pipeline);s.compute_epoch=epoch==d->pipeline_epochs.end()?0:epoch->second;}else if(bind==VK_PIPELINE_BIND_POINT_GRAPHICS){std::lock_guard<std::recursive_mutex> l(d->mutex);s.graphics=pipeline;auto p=d->pipelines.find(pipeline);s.graphics_target=p!=d->pipelines.end() && p->second.target;
     s.geometry_pipeline=p!=d->pipelines.end() && p->second.geometry;s.geometry_dynamic=p!=d->pipelines.end() && p->second.viewport_dynamic;apply_viewport(*d,cb,s);}}
@@ -955,14 +960,33 @@ AA_EXPORT void VKAPI_CALL aaDrawIndirect(VkCommandBuffer cb,VkBuffer b,VkDeviceS
 AA_EXPORT void VKAPI_CALL aaDrawIndexedIndirect(VkCommandBuffer cb,VkBuffer b,VkDeviceSize o,unsigned c,unsigned s){auto d=device(key(cb));drawn(*d,cb,false);d->f.CmdDrawIndexedIndirect(cb,b,o,c,s);}
 AA_EXPORT void VKAPI_CALL aaDrawCount(VkCommandBuffer cb,VkBuffer b,VkDeviceSize o,VkBuffer count,VkDeviceSize co,unsigned maximum,unsigned stride){auto d=device(key(cb));drawn(*d,cb,false);auto fn=(PFN_vkCmdDrawIndirectCount)d->gdpa(d->handle,"vkCmdDrawIndirectCount");if(!fn)fn=(PFN_vkCmdDrawIndirectCount)d->gdpa(d->handle,"vkCmdDrawIndirectCountKHR");fn(cb,b,o,count,co,maximum,stride);}
 AA_EXPORT void VKAPI_CALL aaDrawIndexedCount(VkCommandBuffer cb,VkBuffer b,VkDeviceSize o,VkBuffer count,VkDeviceSize co,unsigned maximum,unsigned stride){auto d=device(key(cb));drawn(*d,cb,false);auto fn=(PFN_vkCmdDrawIndexedIndirectCount)d->gdpa(d->handle,"vkCmdDrawIndexedIndirectCount");if(!fn)fn=(PFN_vkCmdDrawIndexedIndirectCount)d->gdpa(d->handle,"vkCmdDrawIndexedIndirectCountKHR");fn(cb,b,o,count,co,maximum,stride);}
-AA_EXPORT void VKAPI_CALL aaPushDescriptors(VkCommandBuffer cb,VkPipelineBindPoint bind,VkPipelineLayout layout,unsigned set,unsigned count,const VkWriteDescriptorSet* writes){auto d=device(key(cb));if(bind==VK_PIPELINE_BIND_POINT_COMPUTE){std::lock_guard<std::recursive_mutex> l(d->mutex);d->commands[cb].unsupported=true;}auto fn=(PFN_vkCmdPushDescriptorSetKHR)d->gdpa(d->handle,"vkCmdPushDescriptorSetKHR");if(!fn)fn=(PFN_vkCmdPushDescriptorSetKHR)d->gdpa(d->handle,"vkCmdPushDescriptorSet");fn(cb,bind,layout,set,count,writes);}
-AA_EXPORT void VKAPI_CALL aaBindSets2(VkCommandBuffer cb,const VkBindDescriptorSetsInfo* info){auto d=device(key(cb));if(info->stageFlags&VK_SHADER_STAGE_COMPUTE_BIT){std::lock_guard<std::recursive_mutex> l(d->mutex);d->commands[cb].unsupported=true;}auto fn=(PFN_vkCmdBindDescriptorSets2)d->gdpa(d->handle,"vkCmdBindDescriptorSets2");if(!fn)fn=(PFN_vkCmdBindDescriptorSets2)d->gdpa(d->handle,"vkCmdBindDescriptorSets2KHR");fn(cb,info);}
-AA_EXPORT void VKAPI_CALL aaPushTemplate(VkCommandBuffer cb,VkDescriptorUpdateTemplate update,VkPipelineLayout layout,unsigned set,const void* data){auto d=device(key(cb));command(*d,cb).unsupported=true;auto fn=(PFN_vkCmdPushDescriptorSetWithTemplate)d->gdpa(d->handle,"vkCmdPushDescriptorSetWithTemplate");if(!fn)fn=(PFN_vkCmdPushDescriptorSetWithTemplate)d->gdpa(d->handle,"vkCmdPushDescriptorSetWithTemplateKHR");fn(cb,update,layout,set,data);}
-AA_EXPORT void VKAPI_CALL aaPush2(VkCommandBuffer cb,const VkPushDescriptorSetInfo* info){auto d=device(key(cb));command(*d,cb).unsupported=true;auto fn=(PFN_vkCmdPushDescriptorSet2)d->gdpa(d->handle,"vkCmdPushDescriptorSet2");if(!fn)fn=(PFN_vkCmdPushDescriptorSet2)d->gdpa(d->handle,"vkCmdPushDescriptorSet2KHR");fn(cb,info);}
-AA_EXPORT void VKAPI_CALL aaPushTemplate2(VkCommandBuffer cb,const VkPushDescriptorSetWithTemplateInfo* info){auto d=device(key(cb));command(*d,cb).unsupported=true;auto fn=(PFN_vkCmdPushDescriptorSetWithTemplate2)d->gdpa(d->handle,"vkCmdPushDescriptorSetWithTemplate2");if(!fn)fn=(PFN_vkCmdPushDescriptorSetWithTemplate2)d->gdpa(d->handle,"vkCmdPushDescriptorSetWithTemplate2KHR");fn(cb,info);}
+AA_EXPORT VkResult VKAPI_CALL aaCreateTemplate(VkDevice h,const VkDescriptorUpdateTemplateCreateInfo* info,const VkAllocationCallbacks* a,VkDescriptorUpdateTemplate* result){
+    auto d=device(key(h));auto fn=(PFN_vkCreateDescriptorUpdateTemplate)d->gdpa(h,"vkCreateDescriptorUpdateTemplate");
+    if(!fn)fn=(PFN_vkCreateDescriptorUpdateTemplate)d->gdpa(h,"vkCreateDescriptorUpdateTemplateKHR");
+    const auto r=fn(h,info,a,result);
+    if(r==VK_SUCCESS){std::lock_guard<std::recursive_mutex> l(d->mutex);d->push_templates.erase(*result);
+        if(!info->pNext && !info->flags && info->templateType==VK_DESCRIPTOR_UPDATE_TEMPLATE_TYPE_PUSH_DESCRIPTORS_KHR)
+            d->push_templates[*result]=info->pipelineBindPoint;}
+    return r;
+}
+AA_EXPORT void VKAPI_CALL aaDestroyTemplate(VkDevice h,VkDescriptorUpdateTemplate value,const VkAllocationCallbacks* a){
+    auto d=device(key(h));{std::lock_guard<std::recursive_mutex> l(d->mutex);d->push_templates.erase(value);}
+    auto fn=(PFN_vkDestroyDescriptorUpdateTemplate)d->gdpa(h,"vkDestroyDescriptorUpdateTemplate");
+    if(!fn)fn=(PFN_vkDestroyDescriptorUpdateTemplate)d->gdpa(h,"vkDestroyDescriptorUpdateTemplateKHR");fn(h,value,a);
+}
+void track_template(Device& d,VkCommandBuffer cb,VkDescriptorUpdateTemplate value,bool extended=false){
+    std::lock_guard<std::recursive_mutex> l(d.mutex);auto it=d.push_templates.find(value);
+    if(extended || it==d.push_templates.end() || it->second!=VK_PIPELINE_BIND_POINT_GRAPHICS)
+        unsupported(d.commands[cb],"AA cannot restore this drawing state yet (compute or unknown push-descriptor template)");
+}
+AA_EXPORT void VKAPI_CALL aaPushDescriptors(VkCommandBuffer cb,VkPipelineBindPoint bind,VkPipelineLayout layout,unsigned set,unsigned count,const VkWriteDescriptorSet* writes){auto d=device(key(cb));if(bind==VK_PIPELINE_BIND_POINT_COMPUTE){std::lock_guard<std::recursive_mutex> l(d->mutex);unsupported(d->commands[cb],"AA cannot restore this drawing state yet (vkCmdPushDescriptorSet compute)");}auto fn=(PFN_vkCmdPushDescriptorSetKHR)d->gdpa(d->handle,"vkCmdPushDescriptorSetKHR");if(!fn)fn=(PFN_vkCmdPushDescriptorSetKHR)d->gdpa(d->handle,"vkCmdPushDescriptorSet");fn(cb,bind,layout,set,count,writes);}
+AA_EXPORT void VKAPI_CALL aaBindSets2(VkCommandBuffer cb,const VkBindDescriptorSetsInfo* info){auto d=device(key(cb));if(info->stageFlags&VK_SHADER_STAGE_COMPUTE_BIT){std::lock_guard<std::recursive_mutex> l(d->mutex);unsupported(d->commands[cb],"AA cannot restore this drawing state yet (vkCmdBindDescriptorSets2 compute)");}auto fn=(PFN_vkCmdBindDescriptorSets2)d->gdpa(d->handle,"vkCmdBindDescriptorSets2");if(!fn)fn=(PFN_vkCmdBindDescriptorSets2)d->gdpa(d->handle,"vkCmdBindDescriptorSets2KHR");fn(cb,info);}
+AA_EXPORT void VKAPI_CALL aaPushTemplate(VkCommandBuffer cb,VkDescriptorUpdateTemplate update,VkPipelineLayout layout,unsigned set,const void* data){auto d=device(key(cb));track_template(*d,cb,update);auto fn=(PFN_vkCmdPushDescriptorSetWithTemplate)d->gdpa(d->handle,"vkCmdPushDescriptorSetWithTemplate");if(!fn)fn=(PFN_vkCmdPushDescriptorSetWithTemplate)d->gdpa(d->handle,"vkCmdPushDescriptorSetWithTemplateKHR");fn(cb,update,layout,set,data);}
+AA_EXPORT void VKAPI_CALL aaPush2(VkCommandBuffer cb,const VkPushDescriptorSetInfo* info){auto d=device(key(cb));if(info->pNext || (info->stageFlags&VK_SHADER_STAGE_COMPUTE_BIT)){std::lock_guard<std::recursive_mutex> l(d->mutex);unsupported(d->commands[cb],"AA cannot restore this drawing state yet (vkCmdPushDescriptorSet2 compute or extension)");}auto fn=(PFN_vkCmdPushDescriptorSet2)d->gdpa(d->handle,"vkCmdPushDescriptorSet2");if(!fn)fn=(PFN_vkCmdPushDescriptorSet2)d->gdpa(d->handle,"vkCmdPushDescriptorSet2KHR");fn(cb,info);}
+AA_EXPORT void VKAPI_CALL aaPushTemplate2(VkCommandBuffer cb,const VkPushDescriptorSetWithTemplateInfo* info){auto d=device(key(cb));track_template(*d,cb,info->descriptorUpdateTemplate,info->pNext!=nullptr);auto fn=(PFN_vkCmdPushDescriptorSetWithTemplate2)d->gdpa(d->handle,"vkCmdPushDescriptorSetWithTemplate2");if(!fn)fn=(PFN_vkCmdPushDescriptorSetWithTemplate2)d->gdpa(d->handle,"vkCmdPushDescriptorSetWithTemplate2KHR");fn(cb,info);}
 AA_EXPORT void VKAPI_CALL aaDrawMulti(VkCommandBuffer cb,unsigned n,const VkMultiDrawInfoEXT* info,unsigned instances,unsigned first,unsigned stride){auto d=device(key(cb));drawn(*d,cb,false);((PFN_vkCmdDrawMultiEXT)d->gdpa(d->handle,"vkCmdDrawMultiEXT"))(cb,n,info,instances,first,stride);}
 AA_EXPORT void VKAPI_CALL aaDrawMultiIndexed(VkCommandBuffer cb,unsigned n,const VkMultiDrawIndexedInfoEXT* info,unsigned instances,unsigned first,unsigned stride,const int* offsets){auto d=device(key(cb));drawn(*d,cb,false);((PFN_vkCmdDrawMultiIndexedEXT)d->gdpa(d->handle,"vkCmdDrawMultiIndexedEXT"))(cb,n,info,instances,first,stride,offsets);}
-AA_EXPORT void VKAPI_CALL aaExecute(VkCommandBuffer cb,unsigned count,const VkCommandBuffer* child){auto d=device(key(cb));{std::lock_guard<std::recursive_mutex> l(d->mutex);d->commands[cb].unsupported=true;}d->f.CmdExecuteCommands(cb,count,child);}
+AA_EXPORT void VKAPI_CALL aaExecute(VkCommandBuffer cb,unsigned count,const VkCommandBuffer* child){auto d=device(key(cb));{std::lock_guard<std::recursive_mutex> l(d->mutex);unsupported(d->commands[cb],"AA cannot process this drawing path yet (vkCmdExecuteCommands secondary buffers)");}d->f.CmdExecuteCommands(cb,count,child);}
 void submit_count(Device& d,VkFence fence,std::uint64_t count,std::uint64_t temporal){
     const auto now=tick_ms();
     if(d.enabled && std::uint32_t(now-d.last_status)>=250){
@@ -1014,6 +1038,7 @@ PFN_vkVoidFunction hook(const char* name){
  H("CmdDraw",aaDraw) H("CmdDrawIndexed",aaDrawIndexed) H("CmdDrawIndirect",aaDrawIndirect) H("CmdDrawIndexedIndirect",aaDrawIndexedIndirect) H("CmdExecuteCommands",aaExecute)
  H("CmdDrawIndirectCount",aaDrawCount) H("CmdDrawIndirectCountKHR",aaDrawCount) H("CmdDrawIndexedIndirectCount",aaDrawIndexedCount) H("CmdDrawIndexedIndirectCountKHR",aaDrawIndexedCount)
  H("CmdPushDescriptorSet",aaPushDescriptors) H("CmdPushDescriptorSetKHR",aaPushDescriptors) H("CmdBindDescriptorSets2",aaBindSets2) H("CmdBindDescriptorSets2KHR",aaBindSets2)
+ H("CreateDescriptorUpdateTemplate",aaCreateTemplate) H("CreateDescriptorUpdateTemplateKHR",aaCreateTemplate) H("DestroyDescriptorUpdateTemplate",aaDestroyTemplate) H("DestroyDescriptorUpdateTemplateKHR",aaDestroyTemplate)
  H("CmdPushDescriptorSetWithTemplate",aaPushTemplate) H("CmdPushDescriptorSetWithTemplateKHR",aaPushTemplate) H("CmdPushDescriptorSet2",aaPush2) H("CmdPushDescriptorSet2KHR",aaPush2) H("CmdPushDescriptorSetWithTemplate2",aaPushTemplate2) H("CmdPushDescriptorSetWithTemplate2KHR",aaPushTemplate2)
  H("CmdDrawMultiEXT",aaDrawMulti) H("CmdDrawMultiIndexedEXT",aaDrawMultiIndexed)
  H("QueueSubmit",aaSubmit) H("QueueSubmit2",aaSubmit2) H("QueueSubmit2KHR",aaSubmit2) H("WaitForFences",aaWait) H("GetFenceStatus",aaFenceStatus) H("ResetFences",aaResetFences)

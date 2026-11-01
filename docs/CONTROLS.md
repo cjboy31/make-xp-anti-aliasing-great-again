@@ -35,6 +35,8 @@ The status should say **AA ACTIVE** or **TAA ACTIVE** after loading a supported
 flight. A selected button alone does not mean it is working. Read any waiting
 or inactive message. No method removes every trail or flickering edge.
 
+If Zink changes whether AA works, see the [Zink and bypass troubleshooting steps](ZINK-COMPATIBILITY.md).
+
 ## Install, update or remove
 
 Windows: extract the complete ZIP, close X-Plane and run **NativeAA-Setup.exe**.

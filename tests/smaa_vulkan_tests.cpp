@@ -39,7 +39,8 @@ struct Context {
         else if (severity & VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT) ++self.warnings;
         std::cerr << "Vulkan validation: " << data->pMessage << '\n'; return VK_FALSE;
     }
-    explicit Context(bool validation,bool dynamic_rendering=false,bool asynchronous=false,bool multi_viewport=false,bool allow_single_queue=false) {
+    bool extended_push=false;
+    explicit Context(bool validation,bool dynamic_rendering=false,bool asynchronous=false,bool multi_viewport=false,bool allow_single_queue=false,bool push_descriptors=false) {
         try {
             const char* layer = "VK_LAYER_KHRONOS_validation";
             if (validation) {
@@ -95,6 +96,21 @@ struct Context {
             VkDeviceQueueCreateInfo queue_info{VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO};
             queue_info.queueFamilyIndex = family; queue_info.queueCount = 1; queue_info.pQueuePriorities = &priority;
             VkDeviceCreateInfo device_info{VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO};
+            std::vector<const char*> device_extensions;
+            VkPhysicalDeviceMaintenance6FeaturesKHR maintenance6{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MAINTENANCE_6_FEATURES_KHR};
+            if(push_descriptors){
+                unsigned count{};check(vkEnumerateDeviceExtensionProperties(physical,nullptr,&count,nullptr),"Count device extensions");
+                std::vector<VkExtensionProperties> supported(count);check(vkEnumerateDeviceExtensionProperties(physical,nullptr,&count,supported.data()),"Read device extensions");
+                const auto has=[&](const char* name){return std::any_of(supported.begin(),supported.end(),[&](const auto& e){return std::strcmp(e.extensionName,name)==0;});};
+                need(has(VK_KHR_PUSH_DESCRIPTOR_EXTENSION_NAME),"Push descriptor regression requires VK_KHR_push_descriptor");
+                device_extensions.push_back(VK_KHR_PUSH_DESCRIPTOR_EXTENSION_NAME);
+                if(has(VK_KHR_DESCRIPTOR_UPDATE_TEMPLATE_EXTENSION_NAME))device_extensions.push_back(VK_KHR_DESCRIPTOR_UPDATE_TEMPLATE_EXTENSION_NAME);
+                if(has(VK_KHR_MAINTENANCE_6_EXTENSION_NAME)){
+                    VkPhysicalDeviceFeatures2 query{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2};query.pNext=&maintenance6;vkGetPhysicalDeviceFeatures2(physical,&query);
+                    if(maintenance6.maintenance6){device_extensions.push_back(VK_KHR_MAINTENANCE_6_EXTENSION_NAME);extended_push=true;}
+                }
+                device_info.enabledExtensionCount=unsigned(device_extensions.size());device_info.ppEnabledExtensionNames=device_extensions.data();
+            }
             VkPhysicalDeviceFeatures available{},enabled_features{};
             if(multi_viewport){
                 vkGetPhysicalDeviceFeatures(physical,&available);
@@ -112,6 +128,7 @@ struct Context {
                 if(async_family!=family){queue_infos[1].queueFamilyIndex=async_family;device_info.queueCreateInfoCount=2;device_info.pQueueCreateInfos=queue_infos.data();}
             }
             VkPhysicalDeviceVulkan13Features dynamic{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES};
+            if(extended_push)dynamic.pNext=&maintenance6;
             dynamic.dynamicRendering=VK_TRUE;
             dynamic.synchronization2=asynchronous?VK_TRUE:VK_FALSE;
             if(dynamic_rendering) device_info.pNext=&dynamic;

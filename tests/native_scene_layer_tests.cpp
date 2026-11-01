@@ -28,6 +28,7 @@ struct NativeProgram {
     VkDescriptorSetLayout output_layout{},input_layout{};VkDescriptorPool pool{};VkSampler immutable_sampler{};
     std::array<VkDescriptorSet,2> sets{};
     Buffer result,uniform;unsigned offset{};
+    std::function<void(VkCommandBuffer)> before_scene;
     NativeProgram(Context& context,VkExtent2D extent,const std::filesystem::path& shaders)
         :c(context),result(c,16,VK_BUFFER_USAGE_STORAGE_BUFFER_BIT),
          uniform(c,std::max<VkDeviceSize>(512,c.properties.limits.minUniformBufferOffsetAlignment*2),VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT) {
@@ -77,6 +78,7 @@ struct NativeProgram {
         check(vkCreateComputePipelines(c.device,VK_NULL_HANDLE,1,&cp,nullptr,&compute),"Native compute pipeline");vkDestroyShaderModule(c.device,cs,nullptr);
     }
     void record(VkCommandBuffer cb,Image& image) {
+            if(before_scene)before_scene(cb);
             vkCmdBindPipeline(cb,VK_PIPELINE_BIND_POINT_COMPUTE,compute);
             vkCmdBindDescriptorSets(cb,VK_PIPELINE_BIND_POINT_COMPUTE,compute_layout,0,1,&sets[0],0,nullptr);
             vkCmdBindDescriptorSets(cb,VK_PIPELINE_BIND_POINT_COMPUTE,compute_layout,1,1,&sets[1],1,&offset);
@@ -104,6 +106,59 @@ struct NativeProgram {
     }
     ~NativeProgram(){vkDestroyPipeline(c.device,graphics,nullptr);vkDestroyPipeline(c.device,compute,nullptr);vkDestroyPipelineLayout(c.device,graphics_layout,nullptr);vkDestroyPipelineLayout(c.device,compute_layout,nullptr);vkDestroyDescriptorPool(c.device,pool,nullptr);vkDestroyDescriptorSetLayout(c.device,output_layout,nullptr);vkDestroyDescriptorSetLayout(c.device,input_layout,nullptr);vkDestroySampler(c.device,immutable_sampler,nullptr);}
 };
+// Zink uses push templates for graphics. They must not poison unrelated native
+// compute state. Compute pushes still bypass until the layer can restore them.
+struct PushTemplateFixture {
+    Context& c;VkDescriptorSetLayout set{};VkPipelineLayout layout{};VkDescriptorUpdateTemplate value{};
+    PFN_vkCmdPushDescriptorSetWithTemplateKHR push{};
+    PFN_vkDestroyDescriptorUpdateTemplateKHR destroy{};
+    PushTemplateFixture(Context& context,bool compute,bool aliases):c(context){
+        VkDescriptorSetLayoutBinding binding{0,VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,1,compute?VK_SHADER_STAGE_COMPUTE_BIT:VK_SHADER_STAGE_FRAGMENT_BIT,nullptr};
+        VkDescriptorSetLayoutCreateInfo s{VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO};s.flags=VK_DESCRIPTOR_SET_LAYOUT_CREATE_PUSH_DESCRIPTOR_BIT_KHR;s.bindingCount=1;s.pBindings=&binding;
+        check(vkCreateDescriptorSetLayout(c.device,&s,nullptr,&set),"Push descriptor layout");
+        VkPipelineLayoutCreateInfo p{VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO};p.setLayoutCount=1;p.pSetLayouts=&set;
+        check(vkCreatePipelineLayout(c.device,&p,nullptr,&layout),"Push pipeline layout");
+        VkDescriptorUpdateTemplateEntry entry{0,0,1,VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,0,sizeof(VkDescriptorBufferInfo)};
+        VkDescriptorUpdateTemplateCreateInfo t{VK_STRUCTURE_TYPE_DESCRIPTOR_UPDATE_TEMPLATE_CREATE_INFO};t.templateType=VK_DESCRIPTOR_UPDATE_TEMPLATE_TYPE_PUSH_DESCRIPTORS_KHR;
+        t.descriptorUpdateEntryCount=1;t.pDescriptorUpdateEntries=&entry;t.pipelineBindPoint=compute?VK_PIPELINE_BIND_POINT_COMPUTE:VK_PIPELINE_BIND_POINT_GRAPHICS;t.pipelineLayout=layout;t.set=0;
+        auto create=reinterpret_cast<PFN_vkCreateDescriptorUpdateTemplate>(vkGetDeviceProcAddr(c.device,aliases?"vkCreateDescriptorUpdateTemplateKHR":"vkCreateDescriptorUpdateTemplate"));
+        destroy=reinterpret_cast<PFN_vkDestroyDescriptorUpdateTemplateKHR>(vkGetDeviceProcAddr(c.device,aliases?"vkDestroyDescriptorUpdateTemplateKHR":"vkDestroyDescriptorUpdateTemplate"));
+        // The core lifecycle is always available on Vulkan 1.3. KHR lifecycle
+        // aliases are queried only when exposed by this device/loader.
+        if(!create)create=vkCreateDescriptorUpdateTemplate;
+        if(!destroy)destroy=vkDestroyDescriptorUpdateTemplate;
+        check(create(c.device,&t,nullptr,&value),"Create push template");
+        push=reinterpret_cast<PFN_vkCmdPushDescriptorSetWithTemplateKHR>(vkGetDeviceProcAddr(c.device,"vkCmdPushDescriptorSetWithTemplateKHR"));need(push!=nullptr,"Push template command missing");
+    }
+    ~PushTemplateFixture(){destroy(c.device,value,nullptr);vkDestroyPipelineLayout(c.device,layout,nullptr);vkDestroyDescriptorSetLayout(c.device,set,nullptr);}
+};
+void push_template_checks(Context& c,const std::filesystem::path& shaders){
+    const VkExtent2D extent{257,145};
+    Image scene(c,extent,VK_FORMAT_R8G8B8A8_SRGB,4,true),hdr(c,extent,VK_FORMAT_R16G16B16A16_SFLOAT,8,true);
+    Buffer staging(c,std::uint64_t(extent.width)*extent.height*4),data(c,16,VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);
+    name(c,scene.handle,"LDR");name(c,hdr.handle,"HDR");NativeProgram program(c,extent,shaders);
+    native_aa::LiveChannel ui;need(ui.open(),"Push fixture UI channel");native_aa::Settings selection;selection.enabled=false;ui.write_controls(selection);
+    const auto baseline=program.render(scene,staging);selection.enabled=true;ui.write_controls(selection);const auto expected=program.render(scene,staging);
+    need(expected!=baseline,"Push fixture must perform actual AA");
+    const VkDescriptorBufferInfo buffer{data.handle,0,16};
+    for(bool compute:{false,true})for(bool alias:{false,true}){
+        PushTemplateFixture push(c,compute,alias);
+        program.before_scene=[&](auto cb){push.push(cb,push.value,push.layout,0,&buffer);};
+        need(program.render(scene,staging)==(compute?baseline:expected),compute?"Compute push template did not safely bypass":"Graphics push template incorrectly bypassed AA");
+        if(c.extended_push){
+            auto push2=reinterpret_cast<PFN_vkCmdPushDescriptorSetWithTemplate2KHR>(vkGetDeviceProcAddr(c.device,"vkCmdPushDescriptorSetWithTemplate2KHR"));
+            need(push2!=nullptr,"Maintenance6 template command missing");
+            program.before_scene=[&](auto cb){VkPushDescriptorSetWithTemplateInfoKHR info{VK_STRUCTURE_TYPE_PUSH_DESCRIPTOR_SET_WITH_TEMPLATE_INFO_KHR};info.descriptorUpdateTemplate=push.value;info.layout=push.layout;info.pData=&buffer;push2(cb,&info);};
+            need(program.render(scene,staging)==(compute?baseline:expected),"Push template2 changed AA admission");
+            auto write2=reinterpret_cast<PFN_vkCmdPushDescriptorSet2KHR>(vkGetDeviceProcAddr(c.device,"vkCmdPushDescriptorSet2KHR"));need(write2!=nullptr,"Maintenance6 push command missing");
+            program.before_scene=[&](auto cb){VkWriteDescriptorSet write{VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET};write.descriptorCount=1;write.descriptorType=VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;write.pBufferInfo=&buffer;
+                VkPushDescriptorSetInfoKHR info{VK_STRUCTURE_TYPE_PUSH_DESCRIPTOR_SET_INFO_KHR};info.stageFlags=compute?VK_SHADER_STAGE_COMPUTE_BIT:VK_SHADER_STAGE_FRAGMENT_BIT;info.layout=push.layout;info.descriptorWriteCount=1;info.pDescriptorWrites=&write;write2(cb,&info);};
+            need(program.render(scene,staging)==(compute?baseline:expected),"Push descriptor2 changed AA admission");
+        }
+        program.before_scene={};need(program.render(scene,staging)==expected,"Push bypass survived command reset");
+    }
+    std::cout<<"Push templates PASS: graphics keeps AA, compute bypasses, command-reset recovery and native compute readback"<<(c.extended_push?", maintenance6 template2/push2":"; maintenance6 unavailable (extended cases skipped)")<<".\n";
+}
 struct AsyncReadback {
     Context& c;VkCommandPool pool{};VkCommandBuffer commands{};VkFence fence{};VkSemaphore ready{};
     explicit AsyncReadback(Context& context):c(context){
@@ -152,7 +207,7 @@ int main(int argc,char** argv) {
         need(argc>=2 && argc<=4,"Usage: native_scene_layer_tests SHADERS [--expect-bypass] [--allow-single-queue]");
         bool bypass=false,allow_single_queue=false;
         for(int n=2;n<argc;++n){const std::string option=argv[n];if(option=="--expect-bypass")bypass=true;else if(option=="--allow-single-queue")allow_single_queue=true;else need(false,"Unknown fixture option");}
-        std::filesystem::path shaders=argv[1];Context c(true,true,true,true,allow_single_queue);
+        std::filesystem::path shaders=argv[1];Context c(true,true,true,true,allow_single_queue,true);
         std::cout<<(c.async_family==c.family?"Queue coverage: single-queue semaphore handoffs; cross-family coverage unavailable":"Queue coverage: two distinct queue families")<<'\n';
         for(auto extent:{VkExtent2D{65,49},VkExtent2D{257,145},VkExtent2D{3840,2160}}){
             Image scene(c,extent,VK_FORMAT_R8G8B8A8_SRGB,4,true,false,false,c.async_family),hdr(c,extent,VK_FORMAT_R16G16B16A16_SFLOAT,8,true);
@@ -198,7 +253,7 @@ int main(int argc,char** argv) {
             off.enabled=true;off.strength=0;ui.write_controls(off);
             need(program.render(scene,staging)==baseline,"Zero strength must retain native image");
         }
-        if(!bypass)native_taa_layer_checks(c,shaders);
+        if(!bypass){push_template_checks(c,shaders);native_taa_layer_checks(c,shaders);}
         need(c.allocated_bytes==0,"Native fixture retained allocations");c.close();need(c.errors==0,"Layer validation errors");need(c.warnings==0,"Layer validation warnings");
         std::cout<<"Native scene layer PASS: "<<(bypass?"failure bypass":"46 injected frames, including 10 live method/quality/strength cases, 12 semaphore handoffs, 2 resizes, state restoration, UI bypass and live On/Off")<<", zero validation messages.\n";return 0;
     }catch(const std::exception& e){std::cerr<<"Native scene layer FAIL: "<<e.what()<<'\n';return 1;}

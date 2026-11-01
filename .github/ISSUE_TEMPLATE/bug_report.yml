@@ -1,0 +1,35 @@
+name: Bug report
+description: Something looks wrong, crashes or does not save.
+labels: ["pipeline: bug"]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened?
+      description: What you saw, and what you expected instead.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: How can we see it too?
+      placeholder: "1. Load the C172 at KSEA  2. Choose TAA + SMAA  3. Pan the outside view"
+    validations:
+      required: true
+  - type: textarea
+    id: settings
+    attributes:
+      label: Panel settings and status
+      description: AA method, history detail, shimmer, and the status line text (Active / Bypassed + reason).
+  - type: textarea
+    id: system
+    attributes:
+      label: Your system
+      placeholder: "Mod version, Windows/Linux, X-Plane version, GPU + driver, Zink on/off"
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs
+      description: Attach the newest file from Output/NativeAA and X-Plane's Log.txt from the same launch.

@@ -2,56 +2,101 @@
 
 # Make XP Anti-Aliasing Great Again
 
-Smoother edges for X-Plane 12 at your normal resolution. Change settings inside
-the simulator. This mod works on its own and does not use FSR or frame generation.
+Smoother, steadier edges in X-Plane 12 at your normal resolution, adjusted live
+from a panel inside the simulator. Works on its own: no FSR, upscaling or frame
+generation needed. Also called **Native AA**.
 
-## Download and install
+## Download
 
-- [Windows alpha](https://github.com/cjboy31/make-xp-anti-aliasing-great-again/releases/tag/v0.3.3-alpha): extract the ZIP, close X-Plane, and run **NativeAA-Setup.exe**. Select your X-Plane folder.
-- [Linux beta](https://github.com/cjboy31/make-xp-anti-aliasing-great-again/releases/tag/v0.3.3-linux-beta.1): extract the package and run **./install.sh**. Linux flight testing is still in progress.
-- Mac rendering is not available.
+| Channel | Who it's for | Link |
+| --- | --- | --- |
+| **Release Candidates** | Everyone. Only tested and verified features. | [Windows 0.3.3](https://github.com/cjboy31/make-xp-anti-aliasing-great-again/releases/tag/v0.3.3-alpha) · [Linux 0.3.3 beta](https://github.com/cjboy31/make-xp-anti-aliasing-great-again/releases/tag/v0.3.3-linux-beta.1) |
+| **Betas** | Try new features early and tell us what you see. | [All releases (Betas are marked *Pre-release*)](https://github.com/cjboy31/make-xp-anti-aliasing-great-again/releases) |
 
-Launch X-Plane normally. Open **Plugins > Native AA > Open AA controls**.
-Set X-Plane's input scale to **Off / Full**. You can keep MSAA enabled; start at
-2x if your graphics card has room. The mod does not change your controllers.
+Mac: not available yet (see [below](#linux-and-mac)).
 
-## What it does
+## Install
+
+**Windows**
+
+1. Close X-Plane. Extract the whole ZIP and run **NativeAA-Setup.exe**.
+2. Setup finds X-Plane 12 for you. Check the folder and click **Install / update**.
+3. Start X-Plane as usual, load a flight, open **Plugins → Native AA → Open AA controls**.
+
+**Linux (beta)**
+
+1. Close X-Plane. Extract the package and run **`./install.sh`**.
+2. It finds X-Plane 12 for you; press **Enter** to install there.
+3. Start X-Plane and open **Plugins → Native AA → Open AA controls**.
+
+Point at any **?** in the panel to read what a setting does. Click it to pin the card.
+
+## First settings that work well
+
+- In X-Plane, set the input scale to **Off / Full**. MSAA can stay on; 2x is a good start.
+- In the panel, start with **SMAA High**. Flip **On/Off** to compare the same view.
+- Want steadier thin lines? Try **TAA + SMAA**, Finishing strength 50%,
+  Shimmer reduction 50%, Frame history 85%, History detail **Sharper**.
+
+## What each choice does
 
 | Choice | What to expect |
 | --- | --- |
-| SMAA | Smooth jagged outlines with little softening. A good starting point. |
-| FXAA | Fast smoothing that can soften fine textures and text. |
-| TAA — experimental | Steadier edges over time; moving objects can leave trails. |
-| TAA + SMAA / FXAA | TAA followed by extra edge smoothing. Uses more graphics time and memory. |
-| Motion matching | Help TAA match detail as the camera moves. Movement is estimated. |
-| Shimmer reduction | Steady slow-moving thin lines and distant detail in TAA. |
+| SMAA | Smooths jagged outlines with little softening. Best starting point. |
+| FXAA | Very fast smoothing; can soften fine text and textures. |
+| TAA *(experimental)* | Uses recent frames to steady edges and thin lines. Fast-moving objects can leave faint trails. |
+| TAA + SMAA / FXAA | TAA, then an extra edge-smoothing step. Uses more GPU time and memory. |
+| Motion matching | Helps TAA follow the picture as the camera moves. Movement is estimated. |
+| Shimmer reduction | Steadies slow-moving thin lines and distant detail in TAA. |
+| History detail *(new in v2, Beta)* | **Sharper** keeps more detail while moving and stops bright lights from flickering. **Classic** is the earlier look. |
 
-Choices save automatically and AA controls work while you fly. Use On/Off to
-compare the same view. More smoothing can reduce detail. No mode removes every
-flickering edge, cloud artifact or moving trail.
+Choices save automatically and change live while you fly. No setting removes
+every flickering edge, cloud artifact or trail.
 
-If you also use [FSR](https://github.com/cjboy31/xplane-fsr-vulkan), update both
-mods. Choose one on the **Renderer** tab, then restart X-Plane. Both mods keep
-your choices; only one processes the picture.
+### Using the FSR mod too?
+
+Keep both installed if you like. Choose one on the **Renderer** tab and restart
+X-Plane; only one processes the picture, and both keep their settings.
+[FSR Upscaling + Frame Gen](https://github.com/cjboy31/xplane12-fsr-framegen).
 
 ## See the difference
 
-These matching Windows screenshots show edge differences. They do not show how
-shimmer changes while moving. [Capture details](docs/showcase/README.md).
+Matched Windows screenshots of the same view. Stills can't show shimmer while moving.
+[Capture details](docs/showcase/README.md).
 
 ![SMAA comparison](docs/showcase/smaa-high-comparison.png)
 ![FXAA comparison](docs/showcase/fxaa-comparison.png)
 ![TAA comparison](docs/showcase/taa-comparison.png)
 
-## Help and community
+## Graphics cards
 
-[Setup and controls](docs/CONTROLS.md) · [Linux requirements](docs/LINUX-BETA-INSTALLATION.txt)
-· [Upload diagnostic logs](https://xplane-mod-log-reports.cjboy31.chatgpt.site/) · [Join Discord](https://discord.gg/yh396QNgHZ) · [Report a problem](https://github.com/cjboy31/make-xp-anti-aliasing-great-again/issues)
+Native AA uses its own standard Vulkan compute shaders, so it is not tied to one
+brand. Main test card: AMD Radeon AI PRO R9700. Intel Arc and NVIDIA should work
+the same way; reports are welcome. If the panel says **Bypassed**, read the
+reason it shows and see the [Zink notes](docs/ZINK-COMPATIBILITY.md).
 
-Version 0.3.3 corrects a Zink-related bypass and gives clearer compatibility warnings. [What changed and how to test](docs/RELEASE-0.3.3.md). The animated controls and current-session status strip are retained. Use **?** beside any setting. The package also includes a separate
-optional [shadow script](extras/shadows/README.txt). The script starts Off.
-Use the instructions in your download when updating older versions.
+## Linux and Mac
 
-For developers: [Build](docs/BUILD-AND-VALIDATION.md) · [Validation](docs/VALIDATION.md) ·
-[Motion research](docs/MOTION-SOURCES-20261031.md) · [Contributing](CONTRIBUTING.md).
+- **Linux:** a real native beta (Vulkan layer + controls plugin). Automated
+  builds and GPU tests pass; flights on Linux are still being tested.
+  [Requirements](docs/LINUX-BETA-INSTALLATION.txt).
+- **Mac:** X-Plane uses Apple's Metal graphics on Mac, which this mod can't hook
+  into yet. There is no Mac download.
+
+## Help
+
+[Settings guide](docs/CONTROLS.md) ·
+[Report a problem](https://github.com/cjboy31/make-xp-anti-aliasing-great-again/issues/new?template=bug_report.yml) ·
+[Suggest an idea](https://github.com/cjboy31/make-xp-anti-aliasing-great-again/issues/new?template=improvement.yml) ·
+[Upload diagnostic logs](https://xplane-mod-log-reports.cjboy31.chatgpt.site/) ·
+[Discord](https://discord.gg/yh396QNgHZ) ·
+[What we're working on](PIPELINE.md) · [Changelog](CHANGELOG.md)
+
+An optional [shadow script](extras/shadows/README.txt) is included separately and starts Off.
+
+---
+
+**For developers:** [Build and validation](docs/developer/BUILD-AND-VALIDATION.md) ·
+[Architecture](docs/developer/ARCHITECTURE.md) · [Motion research](docs/developer/MOTION-SOURCES-20261031.md) ·
+[Contributing](CONTRIBUTING.md) · [All developer notes](docs/developer/).
 Original code is MIT. [Third-party notices](THIRD_PARTY.md) are included.

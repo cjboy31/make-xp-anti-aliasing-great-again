@@ -22,6 +22,30 @@ vec3 encode(vec3 c) {
     return mix(1.055*pow(c,vec3(1.0/2.4))-.055,c*12.92,lessThanEqual(c,vec3(.0031308)));
 }
 float luma(vec3 c) { return dot(c,vec3(.25,.5,.25)); }
+// Enhanced history (v2): Catmull-Rom history fetch keeps detail that repeated
+// bilinear reprojection would blur; AABB clipping toward the neighborhood
+// centre reduces colour shifts and ghost trails compared with a hard clamp;
+// inverse-luminance weighting stops bright subpixel highlights (runway
+// lights, glints) from dominating the blend and flickering. All three are
+// standard, well-documented TAA techniques implemented here from scratch.
+vec3 historyCatmullRom(vec2 uv,vec2 size) {
+    vec2 position=uv*size,center=floor(position-.5)+.5,f=position-center;
+    vec2 w0=f*(-.5+f*(1-.5*f)),w1=1+f*f*(-2.5+1.5*f),w2=f*(.5+f*(2-1.5*f)),w3=f*f*(-.5+.5*f);
+    vec2 w12=w1+w2,offset12=w2/max(w12,vec2(1e-6));
+    vec2 t0=(center-1)/size,t3=(center+2)/size,t12=(center+offset12)/size;
+    vec3 c=textureLod(historyColor,vec2(t12.x,t0.y),0).rgb*(w12.x*w0.y)+
+           textureLod(historyColor,vec2(t0.x,t12.y),0).rgb*(w0.x*w12.y)+
+           textureLod(historyColor,t12,0).rgb*(w12.x*w12.y)+
+           textureLod(historyColor,vec2(t3.x,t12.y),0).rgb*(w3.x*w12.y)+
+           textureLod(historyColor,vec2(t12.x,t3.y),0).rgb*(w12.x*w3.y);
+    float total=w12.x*w0.y+w0.x*w12.y+w12.x*w12.y+w3.x*w12.y+w12.x*w3.y;
+    return max(c/max(total,1e-6),vec3(0));
+}
+vec3 clipAabb(vec3 low,vec3 high,vec3 value) {
+    vec3 center=.5*(high+low),extent=.5*(high-low)+1e-5,offset=value-center;
+    vec3 units=abs(offset/extent);float largest=max(units.x,max(units.y,units.z));
+    return largest>1?center+offset/largest:value;
+}
 bool inside(vec2 uv,vec2 size,float border) {
     return all(greaterThanEqual(uv,vec2(border)/size))&&all(lessThanEqual(uv,1-vec2(border)/size));
 }
@@ -106,7 +130,8 @@ void main() {
             float gamma=1.5+.5*stabilization;
             low=max(low,mean-gamma*sigma);high=min(high,mean+gamma*sigma);
             vec3 oldRaw=textureLod(previousRaw,oldRawUv,0).rgb;
-            vec3 oldColor=textureLod(historyColor,oldUv,0).rgb;
+            bool enhanced=p.options.w>.5;
+            vec3 oldColor=enhanced?historyCatmullRom(oldUv,vec2(size)):textureLod(historyColor,oldUv,0).rgb;
             float residual=max(max(abs(current.r-oldRaw.r),abs(current.g-oldRaw.g)),abs(current.b-oldRaw.b));
             // A residual is evidence against camera-only motion, not proof of
             // an object vector. Prefer a fresh sample for displays/reflections.
@@ -123,8 +148,13 @@ void main() {
                 confidence=max(confidence,stabilization*stableMean*detail*.92);
             }
             float weight=clamp(p.feedback.x,0,.95)*confidence*mix(1,.55,clamp(speed/32,0,1));
-            if(finite3(oldColor)&&finite3(oldRaw)&&finite3(low)&&finite3(high))
-                result=mix(current,rgb(clamp(yc(oldColor),low,high)),weight);
+            if(finite3(oldColor)&&finite3(oldRaw)&&finite3(low)&&finite3(high)) {
+                if(enhanced) {
+                    vec3 history=rgb(clipAabb(low,high,yc(oldColor)));
+                    float currentWeight=(1-weight)/(1+luma(current)),historyWeight=weight/(1+luma(history));
+                    result=(current*currentWeight+history*historyWeight)/max(currentWeight+historyWeight,1e-6);
+                } else result=mix(current,rgb(clamp(yc(oldColor),low,high)),weight);
+            }
             acceptedWeight=weight;
         }
     }

@@ -8,7 +8,7 @@ from pathlib import Path
 import sys
 import uuid
 
-VERSION = '0.3.3-linux-beta.1'
+VERSION = '2.0.0-linux-beta.1'
 PACKAGE = Path(__file__).resolve().parent
 
 
@@ -171,6 +171,40 @@ def uninstall(root):
     print('Native AA removed. Saved preferences, unknown/modified user files and other layers are retained.')
 
 
+def detect_simulator():
+    """X-Plane's installer lists each X-Plane 12 folder, one per line, in
+    ~/.x-plane/x-plane_install_12.txt. Return the first that still exists."""
+    listing = Path.home() / '.x-plane' / 'x-plane_install_12.txt'
+    try:
+        lines = listing.read_text(errors='replace').splitlines()
+    except OSError:
+        return None
+    for line in lines:
+        folder = Path(line.strip()).expanduser()
+        if line.strip() and (folder / 'X-Plane-x86_64').is_file():
+            return folder
+    return None
+
+
+def confirm_detected(folder):
+    """One-click path: accept the detected folder with Enter (or Yes in the GUI)."""
+    question = f'Found X-Plane 12 at:\n  {folder}\nInstall Native AA there?'
+    if sys.stdin.isatty():
+        answer = input(question + ' [Y/n] ').strip().lower()
+        return answer in ('', 'y', 'yes')
+    try:
+        import tkinter as tk
+        from tkinter import messagebox
+        window = tk.Tk()
+        window.withdraw()
+        try:
+            return messagebox.askyesno('Native AA setup', question)
+        finally:
+            window.destroy()
+    except Exception:
+        return False
+
+
 def choose_folder():
     try:
         import tkinter as tk
@@ -193,7 +227,13 @@ def main():
     parser.add_argument('--uninstall', action='store_true')
     parser.add_argument('--no-registration', action='store_true', help=argparse.SUPPRESS)
     args = parser.parse_args()
-    selected = args.simulator if args.simulator else choose_folder()
+    selected = args.simulator
+    if not selected:
+        found = detect_simulator()
+        if found and confirm_detected(found):
+            selected = str(found)
+    if not selected:
+        selected = choose_folder()
     if not selected:
         print('Cancelled. No changes made.')
         return

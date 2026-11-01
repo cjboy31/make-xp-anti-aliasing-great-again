@@ -510,7 +510,7 @@ bool Surface::record_temporal(VkCommandBuffer cb,const SceneCamera& camera,std::
     if(!capture)throw std::runtime_error("TAA depth snapshot unavailable");
     NativeTaaData data;
     if(!native_taa_constants(data,camera,history_camera,extent,jitter,history_jitter,y_sign,d.settings.taa_history,d.settings.strength,
-        d.settings.motion_refinement,d.settings.shimmer,d.settings.motion_debug))
+        d.settings.motion_refinement,d.settings.shimmer,d.settings.motion_debug,d.settings.history_quality))
         throw std::runtime_error("TAA camera transform unavailable");
     const bool reuse=history_valid && history_y_sign==y_sign && history_settings==d.settings && history_capture==capture.get() && camera_pair(camera,history_camera);
     const bool combo=combined_method(d.settings.method) && !d.settings.motion_debug && d.settings.spatial_strength;

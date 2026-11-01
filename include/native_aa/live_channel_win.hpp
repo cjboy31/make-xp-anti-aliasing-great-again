@@ -13,7 +13,7 @@ namespace native_aa {
 // seqlocks never wait for another thread or publish a partially edited setting.
 struct LiveChannelData {
     volatile LONG control_sequence{},control_ready{};
-    volatile LONG enabled{},method{},quality{},strength{},subpixel{},taa_history{},motion_refinement{},shimmer{},motion_debug{},spatial_strength{};
+    volatile LONG enabled{},method{},quality{},strength{},subpixel{},taa_history{},motion_refinement{},shimmer{},motion_debug{},spatial_strength{},history_quality{};
     volatile LONG status_sequence{},renderer{},tick{},width{},height{},applied_sequence{};
     alignas(8) volatile LONG64 recorded{},submitted{},completed{},bytes{};
     std::array<volatile LONG,48> reason{};
@@ -39,7 +39,7 @@ public:
     void close(){if(data_)UnmapViewOfFile(data_);if(handle_)CloseHandle(handle_);data_=nullptr;handle_=nullptr;}
     bool open(){
         if(data_)return true;
-        const auto name=L"Local\\XPlaneNativeAA-v3-"+std::to_wstring(GetCurrentProcessId());
+        const auto name=L"Local\\XPlaneNativeAA-v4-"+std::to_wstring(GetCurrentProcessId());
         handle_=CreateFileMappingW(INVALID_HANDLE_VALUE,nullptr,PAGE_READWRITE,0,sizeof(LiveChannelData),name.c_str());
         if(handle_)data_=static_cast<LiveChannelData*>(MapViewOfFile(handle_,FILE_MAP_ALL_ACCESS,0,0,sizeof(LiveChannelData)));
         if(!data_)close();return data_!=nullptr;
@@ -55,6 +55,7 @@ public:
         InterlockedExchange(&data_->shimmer,LONG(s.shimmer));
         InterlockedExchange(&data_->motion_debug,LONG(s.motion_debug));
         InterlockedExchange(&data_->spatial_strength,LONG(s.spatial_strength));
+        InterlockedExchange(&data_->history_quality,LONG(s.history_quality));
 
         const auto sequence=InterlockedIncrement(&data_->control_sequence);
         InterlockedExchange(&data_->control_ready,1);return unsigned(sequence);
@@ -71,6 +72,7 @@ public:
             copy.shimmer=unsigned(read(&data_->shimmer));
             copy.motion_debug=unsigned(read(&data_->motion_debug));
             copy.spatial_strength=unsigned(read(&data_->spatial_strength));
+            copy.history_quality=unsigned(read(&data_->history_quality));
 
             if(before==read(&data_->control_sequence) && valid(copy) && (enabled==0 || enabled==1)){s=copy;sequence=unsigned(before);return true;}
         }return false;

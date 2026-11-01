@@ -14,7 +14,7 @@ struct alignas(16) NativeTaaData {
     std::array<float,4> size_jitter{}; // width,height,current viewport jitter pixels
     std::array<float,4> previous_jitter{}; // x,y; z viewport Y sign; w interior/body valid
     std::array<float,4> feedback{}; // history weight, AA blend, depth relative tolerance, reset
-    std::array<float,4> options{}; // local motion refinement, shimmer strength, debug mode, reserved
+    std::array<float,4> options{}; // local motion refinement, shimmer strength, debug mode, enhanced history
 };
 static_assert(sizeof(NativeTaaData) == 256);
 struct NativeTaaViews {
@@ -23,7 +23,7 @@ struct NativeTaaViews {
 };
 bool native_taa_constants(NativeTaaData&,const SceneCamera&,const SceneCamera&,
                           VkExtent2D,std::array<float,2>,std::array<float,2>,float,unsigned,unsigned,
-                          unsigned refinement=0,unsigned shimmer=0,unsigned debug=0);
+                          unsigned refinement=0,unsigned shimmer=0,unsigned debug=0,unsigned history_quality=0);
 class NativeTaaPipeline {
 public:
     NativeTaaPipeline(VkDevice,VkBuffer,const NativeTaaViews&,const std::filesystem::path&);

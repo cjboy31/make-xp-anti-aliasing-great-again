@@ -11,7 +11,7 @@ using System.Windows.Forms;
 using Microsoft.Win32;
 
 internal static class NativeAASetup {
-    const string Version = "0.3.3-alpha";
+    const string Version = "2.0.0-beta.windows.1";
     const string LayerKey = @"Software\Khronos\Vulkan\ImplicitLayers";
     static readonly JavaScriptSerializer Json = new JavaScriptSerializer { MaxJsonLength = 8000000 };
     static readonly UTF8Encoding Utf8 = new UTF8Encoding(false);
@@ -155,6 +155,24 @@ internal static class NativeAASetup {
             if (Directory.Exists(folder) && !Directory.EnumerateFileSystemEntries(folder).Any()) Directory.Delete(folder);
         }
     }
+    // X-Plane's installer lists each X-Plane 12 folder in
+    // %LOCALAPPDATA%\x-plane_install_12.txt. Pre-fill the first that still exists.
+    static string DetectSimulator() {
+        try {
+            string list = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "x-plane_install_12.txt");
+            if (!File.Exists(list)) return "";
+            foreach (var line in File.ReadAllLines(list)) {
+                var folder = line.Trim().TrimEnd('/', '\\');
+                if (folder.Length > 0 && File.Exists(Path.Combine(folder, "X-Plane.exe"))) return Path.GetFullPath(folder);
+            }
+        } catch (Exception) { }
+        return "";
+    }
+    static string pathBoxHint() {
+        return DetectSimulator().Length > 0
+            ? "Sharper edges for X-Plane 12 at your normal resolution.\nWe found X-Plane 12 below. If that's right, just click Install / update. No administrator needed."
+            : "Sharper edges for X-Plane 12 at your normal resolution.\nClick Browse and choose the folder that contains X-Plane.exe, then click Install / update.";
+    }
     [STAThread] static int Main(string[] args) {
         try {
             if (args.Length > 0) {
@@ -170,12 +188,12 @@ internal static class NativeAASetup {
             string icon = Path.Combine(Package, "assets/branding/aa-icon.ico");
             if (File.Exists(icon)) form.Icon = new System.Drawing.Icon(icon);
             var introduction = new Label { Left = 22, Top = 22, Width = 590, Height = 60,
-                Text = "Native-resolution SMAA, FXAA and experimental TAA for X-Plane 12.\nClose X-Plane, select its root folder, then install. No administrator needed." };
-            var pathBox = new TextBox { Left = 22, Top = 94, Width = 475 };
+                Text = pathBoxHint() };
+            var pathBox = new TextBox { Left = 22, Top = 94, Width = 475, Text = DetectSimulator() };
             var browse = new Button { Left = 510, Top = 91, Width = 100, Text = "Browse..." };
             var install = new Button { Left = 22, Top = 144, Width = 200, Height = 36, Text = "Install / update" };
             var uninstall = new Button { Left = 238, Top = 144, Width = 180, Height = 36, Text = "Uninstall" };
-            var status = new Label { Left = 22, Top = 198, Width = 590, Height = 65, Text = "Read README-FIRST.txt for settings, alpha limits and license notices." };
+            var status = new Label { Left = 22, Top = 198, Width = 590, Height = 65, Text = "1. Close X-Plane.  2. Check the folder above.  3. Click Install / update.\nREADME-FIRST.txt has starting settings and license notices." };
             browse.Click += delegate {
                 using (var picker = new FolderBrowserDialog { Description = "Select the folder containing X-Plane.exe", ShowNewFolderButton = false })
                     if (picker.ShowDialog(form) == DialogResult.OK) pathBox.Text = picker.SelectedPath;
@@ -186,7 +204,7 @@ internal static class NativeAASetup {
                     status.Text = remove ? "Removing recorded Native AA files..." : "Checking package and installing..."; status.Refresh();
                     if (remove) Uninstall(pathBox.Text, true); else Install(pathBox.Text, true);
                     status.Text = remove ? "Uninstalled. Preferences and user-modified files are retained." :
-                        "Installed! Launch normally, then Plugins > Native AA > Open AA controls. Set render input to Full.";
+                        "Installed! Start X-Plane as usual, load a flight, then open Plugins > Native AA > Open AA controls.\nPoint at any ? for help.";
                 } catch (Exception error) { status.Text = "Unable to complete. See the error message."; MessageBox.Show(form, error.Message, "Native AA setup", MessageBoxButtons.OK, MessageBoxIcon.Error); }
                 finally { install.Enabled = uninstall.Enabled = browse.Enabled = true; }
             };

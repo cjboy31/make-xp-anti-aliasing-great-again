@@ -56,7 +56,6 @@ struct Rect {int l,t,r,b;bool contains(int x,int y)const{return x>=l && x<r && y
 struct Hit {Rect rect;int action;const char* caption;};
 std::array<Hit,80> hits{};
 unsigned panel_tab=0;
-int help_action=-1; // Retained for saved-state compatibility; help is now a hover card.
 constexpr int panel_height=696;
 unsigned hit_count=0;
 int slider=0;

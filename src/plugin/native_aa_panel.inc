@@ -5,7 +5,6 @@ constexpr Ink canvas{.065f,.075f,.084f}, surface{.094f,.107f,.117f};
 constexpr Ink tile{.125f,.139f,.148f}, hover{.164f,.177f,.182f}, rule{.22f,.24f,.25f};
 constexpr Ink white{.94f,.94f,.91f}, muted{.69f,.72f,.72f}, quiet{.54f,.58f,.59f};
 constexpr Ink gold{.98f,.73f,.355f}, warm{.23f,.184f,.118f}, good{.60f,.86f,.72f};
-std::string help_title;
 // Hover help: a "?" shows its guide in a floating card after a short pause.
 // Clicking a "?" pins the card (useful in VR or with touch screens).
 struct Tip { int action=-1; Rect anchor{}; const char* caption=""; };

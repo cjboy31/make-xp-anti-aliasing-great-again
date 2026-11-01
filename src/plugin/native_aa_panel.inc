@@ -6,6 +6,11 @@ constexpr Ink tile{.125f,.139f,.148f}, hover{.164f,.177f,.182f}, rule{.22f,.24f,
 constexpr Ink white{.94f,.94f,.91f}, muted{.69f,.72f,.72f}, quiet{.54f,.58f,.59f};
 constexpr Ink gold{.98f,.73f,.355f}, warm{.23f,.184f,.118f}, good{.60f,.86f,.72f};
 std::string help_title;
+// Hover help: a "?" shows its guide in a floating card after a short pause.
+// Clicking a "?" pins the card (useful in VR or with touch screens).
+struct Tip { int action=-1; Rect anchor{}; const char* caption=""; };
+Tip frame_tip,shown_tip,pinned_tip;
+std::uint32_t tip_tick=0;
 std::uint32_t open_tick=0,page_tick=0,paint_tick=0;
 int pointer_x=0,pointer_y=0;
 bool animate_panel=true;
@@ -83,11 +88,62 @@ void hit(Rect a,int action,const char* caption=""){
 }
 bool hot(Rect a){return a.contains(pointer_x,pointer_y);}
 int baseline(Rect a){return (a.t+a.b)/2-5;}
+Ink blend(Ink a,Ink b,float t){return {a.r+(b.r-a.r)*t,a.g+(b.g-a.g)*t,a.b+(b.b-a.b)*t};}
+void fill_alpha(Rect a,Ink c,float alpha){
+    if(a.r<=a.l || a.t<=a.b || alpha<=0)return;
+    XPLMSetGraphicsState(0,0,0,0,1,0,0);restore_shape_state=false;
+    glColor4f(c.r,c.g,c.b,std::min(1.f,alpha));
+    glBegin(GL_QUADS);
+    glVertex2i(a.l,a.t);glVertex2i(a.r,a.t);glVertex2i(a.r,a.b);glVertex2i(a.l,a.b);
+    glEnd();
+}
+std::vector<std::string> wrap_words(int width,const std::string& s){
+    std::istringstream words(s);std::string word,line;std::vector<std::string> lines;
+    while(words>>word){
+        const auto next=line.empty()?word:line+" "+word;
+        if(!line.empty() && measure(next)>width){lines.push_back(line);line=word;}else line=next;
+    }
+    if(!line.empty())lines.push_back(line);
+    return lines;
+}
 void help(Rect a,int action,const char* caption){
-    if(hot(a))fill(a,hover);
-    const int cx=(a.l+a.r)/2;
-    text(cx-measure("?")/2,baseline(a),"?",hot(a)?gold:muted);
+    const bool over=hot(a),pinned=pinned_tip.action==action;
+    if(over)frame_tip={action,a,caption};
+    if(over||pinned)fill(a,hover);
+    const int cx=(a.l+a.r)/2,cy=(a.t+a.b)/2;
+    // A soft ring grows around the active "?" so the link to the card is clear.
+    if(over||pinned)fill_alpha({cx-9,cy+9,cx+9,cy-9},gold,.10f+.08f*progress(tip_tick,240));
+    text(cx-measure("?")/2,baseline(a),"?",over||pinned?gold:muted);
     hit(a,1000+action,caption);
+}
+void tooltip(int l,int t,int r,int b){
+    // Keep the current card while the pointer is over it or a "?" is pinned.
+    Tip next=frame_tip.action>=0?frame_tip:pinned_tip;
+    if(next.action!=shown_tip.action){shown_tip=next;tip_tick=paint_tick;}
+    if(shown_tip.action<0)return;
+    const bool pinned=pinned_tip.action==shown_tip.action;
+    // A 140 ms pause stops cards flashing while the pointer crosses the panel.
+    const unsigned delay=pinned?0:140;
+    if(animate_panel && std::uint32_t(paint_tick-tip_tick)<delay)return;
+    const float u=animate_panel?progress(tip_tick+delay,200):1.f;
+    const std::string body=option_help(shown_tip.action);
+    if(body.empty())return;
+    const int width=std::min(360,r-l-32);
+    const auto lines=wrap_words(width-28,body);
+    const int height=int(lines.size())*19+(pinned?64:48);
+    const Rect at=shown_tip.anchor;
+    int left=std::clamp(at.r-width,l+12,r-12-width);
+    int top=at.b-6;
+    if(top-height<b+8)top=at.t+6+height; // Flip above when there is no room below.
+    top=std::min(top,t-8);
+    top-=int((1.f-u)*8.f);                  // Rise into place while fading in.
+    fill_alpha({left+4,top-4,left+width+4,top-height-4},{0,0,0},.38f*u);
+    fill_alpha({left,top,left+width,top-height},surface,.97f*u);
+    fill_alpha({left,top,left+int(width*u),top-2},gold,u);
+    mono(left+14,top-22,shown_tip.caption&&*shown_tip.caption?shown_tip.caption:"Setting guide",blend(surface,gold,u));
+    int y=top-44;
+    for(const auto& line:lines){text(left+14,y,line,blend(surface,white,u));y-=19;}
+    if(pinned)mono(left+14,y-6,"Pinned. Click ? again to close.",blend(surface,quiet,u));
 }
 void button(Rect a,const char* caption,int action,bool selected=false,bool available=true){
     const bool has_help=option_help(action)[0]!=0;
@@ -260,10 +316,13 @@ void motion(int x,int top,int right){
     divider(x,top-127,right);
     if(temporal)slider_row({x,top-129,right,top-168},"Frame history",32,settings.taa_history,95);
     else slider_row({x,top-129,right,top-168},"Fine-detail smoothing",31,settings.subpixel,100,settings.method==Method::fxaa);
-    section(x,top-194,right,"TEST VIEW");
+    section(x,top-194,right,"HISTORY DETAIL");
+    button({x,top-205,mid-2,top-240},"Classic",72,settings.history_quality==0,temporal);
+    button({mid+2,top-205,right,top-240},"Sharper  (beta)",73,settings.history_quality==1,temporal);
+    section(x,top-266,right,"TEST VIEW");
     const char* views[]{"Normal view","Motion test view","History test view"};
-    for(int i=0;i<3;++i)button({x+i*width/3,top-205,x+(i+1)*width/3-3,top-240},views[i],80+i,settings.motion_debug==unsigned(i),temporal);
-    fit(x,top-263,width,"Select Normal view to return to the scene.",muted);
+    for(int i=0;i<3;++i)button({x+i*width/3,top-277,x+(i+1)*width/3-3,top-312},views[i],80+i,settings.motion_debug==unsigned(i),temporal);
+    fit(x,top-335,width,"Select Normal view to return to the scene.",muted);
 }
 void renderer(int x,int top,int right){
     section(x,top,right,"RENDERER FOR NEXT LAUNCH");
@@ -298,7 +357,7 @@ void draw_content(XPLMWindowID id){
     int l,t,r,b;
     XPLMGetWindowGeometry(id,&l,&t,&r,&b);
     XPLMGetMouseLocationGlobal(&pointer_x,&pointer_y);
-    paint_tick=tick_ms();hit_count=0;restore_shape_state=true;
+    paint_tick=tick_ms();hit_count=0;restore_shape_state=true;frame_tip=Tip{};
     fill({l,t,r,b},canvas);
     const int x=l+23,right=r-23,width=right-x;
     const int reveal=int(66*progress(open_tick,330));
@@ -317,12 +376,7 @@ void draw_content(XPLMWindowID id){
     paragraph(x+12,t-113,width-24,state.detail,muted,2);
     navigation(x,t-141,right);
     const int top=t-205-int((1.f-progress(page_tick,180))*5);
-    if(help_action>=0){
-        section(x,top,right,"SETTING GUIDE");
-        mono(x,top-34,help_title,gold);
-        paragraph(x,top-68,width,option_help(help_action),white);
-        button({x,top-160,x+125,top-195},"Back to settings",99);
-    }else if(panel_tab==0)modes(x,top,right);
+    if(panel_tab==0)modes(x,top,right);
     else if(panel_tab==1)motion(x,top,right);
     else if(panel_tab==2)renderer(x,top,right);
     else journal(x,top,right);
@@ -345,6 +399,7 @@ void draw_content(XPLMWindowID id){
         status.applied_sequence==requested_sequence && std::uint32_t(paint_tick-changed_tick)>200)
         notice=settings.enabled?"Saved. The renderer received your selection.":"Saved and applied. AA is off.";
     fit(x,base-76,width,notice,muted);
-    if(help_action<0 && panel_tab!=3)button({x,b+42,x+153,b+11},"Restore defaults",40);
+    if(panel_tab!=3)button({x,b+42,x+153,b+11},"Restore defaults",40);
     button({right-107,b+42,right,b+11},"Close panel",41);
+    tooltip(l,t,r,b);
 }

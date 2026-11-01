@@ -109,6 +109,29 @@ int main(int argc,char** argv){
                 previous=std::move(result);previous_raw=source;previous_jitter=jitter;
             }
             need(temporal_error<spatial_error*.98,"Jittered TAA did not improve over fresh-only reconstruction");
+            {
+                // v2 enhanced history (Catmull-Rom fetch, AABB clip, inverse-luma
+                // weights) must also beat fresh-only reconstruction and keep alpha.
+                double enhanced_error=0,enhanced_fresh=0;
+                auto history_frame=unfiltered,history_raw=unfiltered;std::array<float,2> history_jitter{};
+                data.options[3]=1;
+                for(unsigned frame=0;frame<40;++frame){
+                    const auto jitter=native_aa::scene_jitter(frame);
+                    const auto source=diagonal(size,jitter);
+                    current.upload(staging,source.data(),source.size());history.upload(staging,history_frame.data(),history_frame.size());raw.upload(staging,history_raw.data(),history_raw.size());
+                    data.size_jitter={float(size.width),float(size.height),jitter[0],jitter[1]};data.previous_jitter={history_jitter[0],history_jitter[1],1,0};
+                    data.reprojection[12]=0;data.feedback={.85f,1,.015f,0};
+                    auto result=render(frame==0);alpha_equal(source,result);
+                    if(frame>=32){
+                        enhanced_error+=mse(result,reference,size);
+                        data.feedback[0]=0;const auto fresh=render(false);enhanced_fresh+=mse(fresh,reference,size);
+                    }
+                    history_frame=std::move(result);history_raw=source;history_jitter=jitter;
+                }
+                data.options[3]=0;
+                need(enhanced_error<enhanced_fresh*.98,"Enhanced TAA history did not improve over fresh-only reconstruction");
+                std::cout<<"Enhanced history fixed-grid error "<<enhanced_error<<" vs classic "<<temporal_error<<" vs fresh "<<enhanced_fresh<<'\n';
+            }
             // Known non-camera image displacement: camera prediction is zero,
             // a smooth 2D signal moves by (+.7,-.4) pixels in the previous grid.
             // Debug is a readback of the actual vector used, not a CPU counter.

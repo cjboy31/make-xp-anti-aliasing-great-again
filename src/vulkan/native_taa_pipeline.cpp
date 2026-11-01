@@ -18,7 +18,7 @@ void matrix(std::array<float,16>& output, const Matrix& source) {
 }
 bool native_taa_constants(NativeTaaData& data,const SceneCamera& current,const SceneCamera& previous,
     VkExtent2D size,std::array<float,2> jitter,std::array<float,2> old_jitter,float y_sign,unsigned weight,unsigned blend,
-    unsigned refinement,unsigned shimmer,unsigned debug) {
+    unsigned refinement,unsigned shimmer,unsigned debug,unsigned history_quality) {
     if (!current.valid || !size.width || !size.height || (y_sign!=1 && y_sign!=-1)) return false;
     for (float value:jitter) if (!std::isfinite(value) || std::abs(value)>.5f) return false;
     Matrix inverse_projection{},inverse_view{},inverse_body{};
@@ -32,7 +32,7 @@ bool native_taa_constants(NativeTaaData& data,const SceneCamera& current,const S
     data.size_jitter={float(size.width),float(size.height),jitter[0],jitter[1]};
     data.previous_jitter={old_jitter[0],old_jitter[1],y_sign,body?1.f:0.f};
     data.feedback={float(std::min(weight,95U))/100,float(std::min(blend,100U))/100,.015f,reuse?0.f:1.f};
-    data.options={float(std::min(refinement,1U)),float(std::min(shimmer,100U))/100,float(std::min(debug,2U)),0};
+    data.options={float(std::min(refinement,1U)),float(std::min(shimmer,100U))/100,float(std::min(debug,2U)),float(std::min(history_quality,1U))};
     return true;
 }
 NativeTaaPipeline::NativeTaaPipeline(VkDevice device,VkBuffer constants,const NativeTaaViews& views,const std::filesystem::path& shader):device_(device) {

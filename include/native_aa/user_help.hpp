@@ -19,6 +19,8 @@ inline const char* option_help(int action) {
     case 50:return "Forget the pictures saved by TAA and start fresh. Use this if an old image stays visible after changing the view. It does not reset your settings.";
     case 70:return "Use camera movement and scene depth to match earlier pictures. This is the lower-cost choice and a good starting point for TAA.";
     case 71:return "Also compare nearby image details to improve the motion estimate. This costs more graphics time. It estimates movement; it does not know the true movement of every aircraft, propeller or cloud.";
+    case 72:return "Classic history uses the original TAA blend from version 0.3. Choose it to compare, or if Sharper history looks wrong on your system.";
+    case 73:return "Sharper history keeps more fine detail when the camera moves and reduces flicker from bright lights and glints. It is new in version 2 and is a beta feature. Compare it with Classic while panning the view.";
     case 80:return "Show the normal scene. Choose this after checking either motion test view.";
     case 81:return "Replace the scene with colors showing estimated movement. This is a test view, not an AA improvement. Select Normal view to return to flying.";
     case 82:return "Show where TAA trusts older pictures. This is a test view for tracking trails or shimmer. Select Normal view to return to flying.";

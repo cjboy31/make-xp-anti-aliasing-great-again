@@ -29,6 +29,7 @@
 #include <cmath>
 #include <cstdio>
 #include <iterator>
+#include <vector>
 namespace {
 using namespace native_aa;
 Settings settings;
@@ -55,7 +56,8 @@ struct Rect {int l,t,r,b;bool contains(int x,int y)const{return x>=l && x<r && y
 struct Hit {Rect rect;int action;const char* caption;};
 std::array<Hit,80> hits{};
 unsigned panel_tab=0;
-int help_action=-1;
+int help_action=-1; // Retained for saved-state compatibility; help is now a hover card.
+constexpr int panel_height=696;
 unsigned hit_count=0;
 int slider=0;
 Rect slider_rect{};
@@ -92,11 +94,15 @@ int mouse(XPLMWindowID,int x,int y,XPLMMouseStatus event,void*){
         if(event!=xplm_MouseDown)return 1;
         for(unsigned i=0;i<hit_count;++i)if(hits[i].rect.contains(x,y)){
             const auto action=hits[i].action;
-            if(action>=1000){help_title=hits[i].caption;help_action=action-1000;change_page();return 1;}
-            if(action==99){help_action=-1;change_page();return 1;}
+            if(action>=1000){
+                // Click pins or unpins a hover card; it never leaves the current page.
+                if(pinned_tip.action==action-1000)pinned_tip=Tip{};
+                else pinned_tip={action-1000,hits[i].rect,hits[i].caption};
+                tip_tick=paint_tick;return 1;
+            }
             if(action==41){slider=0;if(pending_disk)persist();XPLMSetWindowIsVisible(window,0);return 1;}
             if(action>=30 && action<=34){slider=action;slider_rect=hits[i].rect;adjust(x);return 1;}
-            if(action>=60 && action<=63){help_action=-1;panel_tab=unsigned(action-60);change_page();if(panel_tab==2)renderer_choice=displayed_renderer_choice(settings_file.parent_path().parent_path().parent_path());return 1;}
+            if(action>=60 && action<=63){pinned_tip=Tip{};panel_tab=unsigned(action-60);change_page();if(panel_tab==2)renderer_choice=displayed_renderer_choice(settings_file.parent_path().parent_path().parent_path());return 1;}
             if(action>=90 && action<=92){
                 const xp_renderer::Choice values[]{xp_renderer::Choice::native_aa,xp_renderer::Choice::fsr,xp_renderer::Choice::off};
                 xp_renderer::save(settings_file.parent_path().parent_path().parent_path(),values[action-90]);renderer_choice=values[action-90];
@@ -104,6 +110,7 @@ int mouse(XPLMWindowID,int x,int y,XPLMMouseStatus event,void*){
             }
             if(action==1)settings.enabled=!settings.enabled;
             else if(action==70 || action==71)settings.motion_refinement=unsigned(action-70);
+            else if(action==72 || action==73)settings.history_quality=unsigned(action-72);
             else if(action>=80 && action<=82)settings.motion_debug=unsigned(action-80);
             else if(action>=10 && action<=14){settings.method=Method(action-10);hit_count=0;temporal_completed_tick=0;last_temporal_completed=status.temporal_completed;}
             else if(action>=20 && action<=23)settings.quality=unsigned(action-20);
@@ -126,14 +133,14 @@ void show(){
     slider=0;if(pending_disk)persist();
     if(!window){
         int l,t,r,b;XPLMGetScreenBoundsGlobal(&l,&t,&r,&b);
-        XPLMCreateWindow_t info{};info.structSize=sizeof(info);info.left=l+std::clamp((r-l-800)/2,0,40);info.top=t-std::clamp(t-b-624,0,65);
-        info.right=info.left+std::clamp(r-l,650,800);info.bottom=info.top-624;info.visible=1;
+        XPLMCreateWindow_t info{};info.structSize=sizeof(info);info.left=l+std::clamp((r-l-800)/2,0,40);info.top=t-std::clamp(t-b-panel_height,0,65);
+        info.right=info.left+std::clamp(r-l,650,800);info.bottom=info.top-panel_height;info.visible=1;
         info.drawWindowFunc=draw;info.handleMouseClickFunc=mouse;info.handleKeyFunc=key;
         info.handleCursorFunc=cursor;info.handleMouseWheelFunc=wheel;info.handleRightClickFunc=right_click;
         info.decorateAsFloatingWindow=xplm_WindowDecorationRoundRectangle;info.layer=xplm_WindowLayerFloatingWindows;
         window=XPLMCreateWindowEx(&info);if(!window)return;
         XPLMSetWindowTitle(window,"Native AA - Anti-aliasing controls");
-        XPLMSetWindowResizingLimits(window,650,624,1040,624);
+        XPLMSetWindowResizingLimits(window,650,panel_height,1040,panel_height);
     }
     XPLMSetWindowIsVisible(window,1);XPLMBringWindowToFront(window);
 }

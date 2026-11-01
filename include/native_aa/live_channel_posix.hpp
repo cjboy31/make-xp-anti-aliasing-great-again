@@ -21,7 +21,7 @@ namespace native_aa {
 // shared fields use lock-free atomics; reads retry a bounded four times.
 struct LiveChannelData {
     std::uint32_t magic{},references{};
-    std::uint32_t control_sequence{},control_ready{},enabled{},method{},quality{},strength{},subpixel{},taa_history{},motion_refinement{},shimmer{},motion_debug{},spatial_strength{};
+    std::uint32_t control_sequence{},control_ready{},enabled{},method{},quality{},strength{},subpixel{},taa_history{},motion_refinement{},shimmer{},motion_debug{},spatial_strength{},history_quality{};
     std::uint32_t status_sequence{},renderer{},tick{},width{},height{},applied_sequence{};
     alignas(8) std::uint64_t recorded{},submitted{},completed{},bytes{};
     std::array<std::uint32_t,48> reason{};
@@ -42,7 +42,7 @@ class LiveChannel {
     int fd_=-1;
     LiveChannelData* data_{};
     std::string name_;
-    static constexpr std::uint32_t magic=0x41413304;
+    static constexpr std::uint32_t magic=0x41413305;
     template<class T> static T read(const T* value){return __atomic_load_n(value,__ATOMIC_SEQ_CST);}
     template<class T,class U> static void store(T* target,U value){__atomic_store_n(target,T(value),__ATOMIC_SEQ_CST);}
     static std::uint32_t increment(std::uint32_t* value){return __atomic_add_fetch(value,1U,__ATOMIC_SEQ_CST);}
@@ -57,7 +57,7 @@ public:
         std::istringstream fields(line.substr(end+2));std::string token;
         for(unsigned field=3;field<=22;++field)if(!(fields>>token))return {};
         if(token.empty() || token.find_first_not_of("0123456789")!=std::string::npos)return {};
-        return "/native-aa-v3-"+std::to_string(getuid())+"-"+std::to_string(getpid())+"-"+token;
+        return "/native-aa-v4-"+std::to_string(getuid())+"-"+std::to_string(getpid())+"-"+token;
     }
     void close(){
         if(data_){
@@ -105,6 +105,7 @@ public:
         store(&data_->shimmer,s.shimmer);
         store(&data_->motion_debug,s.motion_debug);
         store(&data_->spatial_strength,s.spatial_strength);
+        store(&data_->history_quality,s.history_quality);
 
         auto sequence=increment(&data_->control_sequence);store(&data_->control_ready,1);return sequence;
     }
@@ -119,6 +120,7 @@ public:
             copy.shimmer=read(&data_->shimmer);
             copy.motion_debug=read(&data_->motion_debug);
             copy.spatial_strength=read(&data_->spatial_strength);
+            copy.history_quality=read(&data_->history_quality);
 
             if(before==read(&data_->control_sequence) && valid(copy) && enabled<=1){s=copy;sequence=before;return true;}
         }

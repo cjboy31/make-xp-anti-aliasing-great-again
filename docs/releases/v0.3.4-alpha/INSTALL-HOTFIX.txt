@@ -1,0 +1,71 @@
+Native AA 0.3.4-alpha - Zink hotfix (Windows)
+=============================================
+
+What it fixes
+-------------
+With Zink turned on in X-Plane 12.4.4, Native AA 0.3.3 switched itself off.
+This hotfix keeps Native AA working with Zink on or off.
+
+You need Native AA 0.3.3 already installed. The hotfix only replaces Native
+AA's renderer file. Your settings stay the same.
+
+Install (about one minute)
+--------------------------
+1. Close X-Plane.
+2. Right-click the downloaded zip file and choose "Extract All...".
+   Open the extracted folder.
+3. Double-click Install-Hotfix.cmd.
+   - If Windows shows "Windows protected your PC", click "More info",
+     then "Run anyway".
+   - It finds your X-Plane 12 folder by itself. If it asks, paste the
+     folder that has X-Plane.exe in it (for example C:\X-Plane 12) and
+     press Enter.
+4. Wait for "Done." Then press any key to close the window.
+5. Start X-Plane the way you always do.
+
+Check that it works
+-------------------
+Open the folder  X-Plane 12\Output\NativeAA  and open the newest file whose
+name starts with "renderer-". Near the top you should see:
+
+    START live-test native AA; no FSR; version 0.3.4-alpha
+    DEVICE READY native AA opt-in
+
+With Zink on you may also see a line starting "DEVICE state extensions
+enabled". That is normal.
+
+If it still does not work
+-------------------------
+If the file says "START pass-through", the reason is in brackets on that
+line. Please send us:
+  - that renderer-*.log file (all of them from that start, if there are
+    several)
+  - X-Plane 12\Log.txt
+  - a screenshot of the Native AA panel
+
+Undo
+----
+Close X-Plane and double-click Undo-Hotfix.cmd in the same folder.
+Native AA goes back to the 0.3.3 renderer.
+
+Manual install (only if the script will not run)
+------------------------------------------------
+1. Close X-Plane.
+2. Open  X-Plane 12\Resources\plugins\NativeAA\renderer.
+3. Make a copy of native-aa.json somewhere safe.
+4. Copy native-aa-live.dll from this hotfix into that renderer folder and
+   rename it to  native-aa-4ac1fd778667.dll
+5. Open native-aa.json in Notepad. Find the line with "library_path" and
+   change the file name in it so it reads:
+       "library_path": ".\\native-aa-4ac1fd778667.dll"
+   Keep the two backslashes. Save the file.
+6. Start X-Plane.
+To undo, put your saved copy of native-aa.json back.
+
+Check the download (optional)
+-----------------------------
+SHA-256 of native-aa-live.dll:
+4ac1fd778667d88343af606c3f1db694131008d39295b02cfb1a2a2a0fbab7d3
+
+This hotfix is an alpha build. It was built from the released 0.3.3 source
+with only the Zink fix and a clearer log line added.

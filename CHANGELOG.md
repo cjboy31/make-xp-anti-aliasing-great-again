@@ -1,3 +1,23 @@
+# Native Beta update — November 4, 2026
+
+**Beta — native Linux x86_64 for X-Plane 12.4.4 / Vulkan.** Windows users should use the separate Windows Beta 2 download.
+
+- Includes SMAA, FXAA, CMAA 2, experimental TAA and combined AA modes, motion/shimmer controls and sharpening.
+- Adds the current Native image-matching preview and the complete shader payload, including motion with MSAA.
+- Choose Release Candidates or Betas in Renderer and turn update notices On or Off. Automatic checks need curl; Downloads works without it.
+- Setup supports several X-Plane folders with a separate image-processor registration for each one. Updating/removing one preserves the others and saved choices.
+- The package contains binaries, needed runtime scripts and user help. No development source, model weights, FSR, NR or frame generation is supplied. Mac rendering is not available.
+
+Built and checked separately on Ubuntu 22.04 and 24.04, including software-Vulkan rendering, failure fallback, real loader isolation and install/update/uninstall checks. The distributed archive is the Ubuntu 22.04 baseline build. These automated checks are not actual Linux X-Plane flights; image quality and long-flight stability still need community testing.
+
+Close X-Plane. Extract ALL files, run ./install.sh and select your X-Plane folder. Start X-Plane normally, set Rendering Resolution to Full, then open Plugins > Native AA > Open AA controls. Start with SMAA and compare On/Off. Requirements and removal instructions are in INSTALLATION-AND-USE.txt.
+
+Private source provenance: `5484107b121fa35a88927af324c3e53c099cf310`. Hashes: SHA256SUMS.txt.
+
+Questions or bug reports: https://discord.gg/yh396QNgHZ
+
+---
+
 # Changes
 
 **Windows Beta — one complete Native AA update for community testing.** FSR, NR and frame generation are not required.

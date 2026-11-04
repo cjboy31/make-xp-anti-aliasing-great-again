@@ -1,3 +1,24 @@
+# Linux Beta 3 — November 4, 2026
+
+**Beta — Native AA 2.0 Linux Beta 3 for X-Plane 12.4.4 / Vulkan.**
+
+- More reliable update notices follow your chosen channel. One bad download entry no longer hides a valid update.
+- If settings cannot be saved, the panel explains why. Your current notice and channel choices stay selected while X-Plane is open.
+- Update checks close cleanly. Installation handles different folder permission settings and keeps each X-Plane folder separate.
+- Keeps SMAA, FXAA, CMAA 2, experimental TAA and combined AA modes, motion/shimmer controls and optional sharpening. FSR, NR and frame generation are not required.
+
+Close X-Plane. Extract all files, run ./install.sh and select your X-Plane folder. Start X-Plane normally, set Rendering Resolution to Full, then open Plugins > Native AA > Open AA controls. Start with SMAA and compare On/Off. Saved choices and unrelated or edited files are kept. Automatic update checks need curl; Downloads still works without it.
+
+Built and checked separately on Ubuntu 22.04 and 24.04, including software-Vulkan rendering, failure recovery, real loader isolation and install/update/uninstall checks. This download is the Ubuntu 22.04 baseline build. Actual Linux X-Plane flights, long sessions and broad GPU/driver compatibility still need community testing. No new FPS or shimmer-free claim is made.
+
+Windows users should use [Native AA 2.0 Beta 3 for Windows](https://github.com/cjboy31/make-xp-anti-aliasing-great-again/releases/tag/v2.0.0-beta.windows.3). Mac rendering is not included.
+
+Private source provenance: `fc92da1528b8f36ae55b30e90b64997d4cb2dcb9`. Check the download with SHA256SUMS.txt. No development source, models or build credentials are included.
+
+Questions or bug reports: https://discord.gg/yh396QNgHZ
+
+---
+
 # Changes
 
 ## 2.0.0-beta.windows.3 / 2.0.0-linux-beta.3

@@ -8,7 +8,7 @@ Smoother edges in X-Plane 12 at your normal input resolution. Public downloads a
 
 | Channel | Windows | Linux |
 | --- | --- | --- |
-| **Betas — latest features, still being tested** | [2.0 Beta 3](https://github.com/cjboy31/make-xp-anti-aliasing-great-again/releases/tag/v2.0.0-beta.windows.3) | [2.0 Linux Beta 2](https://github.com/cjboy31/make-xp-anti-aliasing-great-again/releases/tag/v2.0.0-linux-beta.2) |
+| **Betas — latest features, still being tested** | [2.0 Beta 3](https://github.com/cjboy31/make-xp-anti-aliasing-great-again/releases/tag/v2.0.0-beta.windows.3) | [2.0 Linux Beta 3](https://github.com/cjboy31/make-xp-anti-aliasing-great-again/releases/tag/v2.0.0-linux-beta.3) |
 | **Release Candidates — earlier tested baseline** | [0.3.3](https://github.com/cjboy31/make-xp-anti-aliasing-great-again/releases/tag/v0.3.3-alpha) | [0.3.3 Linux beta](https://github.com/cjboy31/make-xp-anti-aliasing-great-again/releases/tag/v0.3.3-linux-beta.1) |
 
 [Manual Windows 0.3.4 Alpha Zink hotfix](https://github.com/cjboy31/make-xp-anti-aliasing-great-again/releases/tag/v0.3.4-alpha) · [Platform limits](docs/PLATFORM-STATUS.md)
@@ -24,7 +24,7 @@ Start with SMAA. Use On/Off to compare the same view. Hover over ? for help. If 
 
 Moving from before v2? Close X-Plane and back up your preferences. Use the older package's uninstaller if removing it, keep your saved settings, then install the new package into the same X-Plane folder.
 
-**Windows Beta 3 improves update and setup reliability.** Existing AA and image controls are retained. Saved choices and unrelated or edited files are kept. Linux has its own Beta download below.
+**Windows Beta 3 improves update and setup reliability.** Existing AA and image controls are retained. Saved choices and unrelated or edited files are kept. Use the Linux download in the table above.
 
 
 ## Included in the v2 Beta

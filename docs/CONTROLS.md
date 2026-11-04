@@ -62,4 +62,17 @@ The optional [shadow script](../extras/shadows/README.txt) is installed separate
 with FlyWithLua. It starts Off. It does not require either AA renderer.
 
 [Discord help](https://discord.gg/yh396QNgHZ) ·
-[Developer build and validation](https://github.com/cjboy31/make-xp-anti-aliasing-great-again/blob/main/docs/BUILD-AND-VALIDATION.md)
+[Downloads and help](https://github.com/cjboy31/make-xp-anti-aliasing-great-again/releases)
+
+
+## Update notices
+
+Open Renderer. Choose Release Candidates or Betas, and set Notices On or Off.
+If a newer version is available, a brief notice appears and the Downloads button
+changes to Update! Click it to open that release. Close X-Plane before running
+setup. Your choices are kept. Checks run separately from AA; an offline connection
+or a missing checker does not stop rendering. Linux automatic checks need curl.
+
+For the image-motion preview, choose a TAA method, then Motion & shimmer > Native
+and Image matching. It can reduce some movement errors but costs GPU time. Compare
+trails, shimmer and flicker; turn it Off if the view looks worse.

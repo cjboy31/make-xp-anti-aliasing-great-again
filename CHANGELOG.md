@@ -1,5 +1,26 @@
 # Changes
 
+**Windows Beta — one complete Native AA update for community testing.** FSR, NR and frame generation are not required.
+
+- **Updates inside X-Plane:** choose Release Candidates or Betas in Renderer. Automatic notices can be turned On or Off. A brief notice and Update button link to the matching release. Close X-Plane before installing.
+- **Current AA tools together:** SMAA, FXAA, CMAA 2, experimental TAA and combinations, motion/history/shimmer controls, sharpening and automatic AA memory budgeting.
+- **Image-motion preview:** with a TAA method, choose Native and Image matching in Motion & shimmer. It can correct some movement estimates before TAA, at extra GPU cost. Compare trails, shimmer and flicker; it does not remove every artifact.
+- **Several simulator folders:** setup lists installations and uses a separate renderer registration for each folder. Only the selected folder is changed. Current Zink compatibility fixes and regular native-motion support summaries are included.
+- **Complete binary package:** setup verifies its pinned manifest and installs all 28 production shaders, including native MSAA-array motion and image matching. Development source is not shipped. Existing licenses and third-party notices remain included.
+
+Local Windows build, isolated GPU scene/TAA/temporal/state-restoration, activation/identity and installer lifecycle checks passed. Setup rejects changed manifests/shaders and malformed inventory, and preserves saved AA/update choices and user files. No new owner-PC flight, broad GPU, long-flight, night-light or Zink performance clearance is claimed. Community Beta feedback is needed.
+
+Linux development is on the same Beta branch. A new Linux package awaits native build validation; the existing [Linux Beta 1](https://github.com/cjboy31/make-xp-anti-aliasing-great-again/releases/tag/v2.0.0-linux-beta.1) remains available, with real Linux flight validation still pending. No Mac rendering package is added.
+
+Close X-Plane, extract the ZIP and run **NativeAA-Setup.exe**. Select your X-Plane folder and click **Install / update**. Start X-Plane normally, set Rendering Resolution to Full, then open **Plugins > Native AA > Open AA controls**. If FSR is installed too, choose one image processor and restart. The setup program preserves your choices.
+
+Private source provenance: `07755256994f72e5f8a28bbde617f69309fe9158`. Download hashes are in SHA256SUMS.txt.
+
+Questions or bug reports: https://discord.gg/yh396QNgHZ
+
+---
+
+
 ## 2.0.0-beta.windows.1 (Windows) / 2.0.0-linux-beta.1 (Linux)
 
 First v2 Beta of Native AA (owner-approved, 2026-11-02). Choices marked experimental start Off. Checked live on one Windows PC; Linux is built and tested automatically but not yet flown. Mac rendering is not available.

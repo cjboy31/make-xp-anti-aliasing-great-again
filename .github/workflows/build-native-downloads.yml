@@ -91,7 +91,17 @@ jobs:
           archives=list(root.glob('*.tar.gz')); assert len(archives)==1
           archive=archives[0]
           with tarfile.open(archive) as z:
-              assert all(m.isfile() or m.isdir() for m in z.getmembers())
+              members=z.getmembers()
+              assert all(m.isfile() or m.isdir() for m in members)
+              assert len({m.name for m in members})==len(members), 'Duplicate archive entry'
+              assert len({m.name.split('/')[0] for m in members})==1, 'Mixed archive roots'
+              for m in members:
+                  p=pathlib.PurePosixPath(m.name)
+                  assert not p.is_absolute() and '..' not in p.parts, 'Unsafe archive path'
+                  relative=m.name.split('/',1)[1] if '/' in m.name else ''
+                  executable=relative in {'install.sh','install-linux.py','NativeAA/64/lin.xpl','NativeAA/support/NativeAAUpdateCheck'} or re.fullmatch(r'NativeAA/renderer/native-aa-[0-9a-f]{12}\.so',relative)
+                  expected=0o755 if m.isdir() or executable else 0o644
+                  assert (m.uid,m.gid,m.uname,m.gname)==(0,0,'','') and m.mode==expected, 'Unsafe archive owner or mode'
               files={m.name:z.extractfile(m).read() for m in z.getmembers() if m.isfile()}
           assert len({k.split('/')[0] for k in files})==1
           payload={k.split('/',1)[1]:v for k,v in files.items()}

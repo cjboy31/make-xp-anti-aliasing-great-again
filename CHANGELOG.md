@@ -1,3 +1,14 @@
+# Changes
+
+## 2.0.0-beta.windows.3 / 2.0.0-linux-beta.3
+
+- **More reliable update notices:** one bad download entry no longer hides a valid update. Notices follow the channel you chose and do not offer an older version as a new update.
+- **Clearer saved choices:** if your settings cannot be saved, the panel explains why. Your current notice and channel choices stay selected while X-Plane is open.
+- **Safer setup:** Windows handles drive-root folders correctly and checks the files it copies. Your saved settings and unrelated or edited files are kept.
+- **Linux fixes:** update checks close cleanly, and installation works with different folder permission settings. Each X-Plane folder keeps its own setup.
+- The existing AA modes and image controls are unchanged. Windows and Linux automated rendering and installer checks passed; Linux flights and broad hardware testing still need community reports.
+
+
 # Native Beta update — November 4, 2026
 
 **Beta — native Linux x86_64 for X-Plane 12.4.4 / Vulkan.** Windows users should use the separate Windows Beta 2 download.

@@ -51,7 +51,7 @@ jobs:
           printf '%s\n' "$READ_KEY" > "$key"
           unset READ_KEY
           # Host keys come from GitHub's HTTPS metadata, not unauthenticated scan.
-          curl --fail --silent --show-error https://api.github.com/meta > "$RUNNER_TEMP/github-meta.json"
+          curl --fail --silent --show-error --retry 4 --retry-all-errors --connect-timeout 15 --max-time 90 https://api.github.com/meta > "$RUNNER_TEMP/github-meta.json"
           python3 -c 'import json,sys; x=json.load(open(sys.argv[1])); open(sys.argv[2],"w").write("".join("github.com "+k+"\n" for k in x["ssh_keys"]))' "$RUNNER_TEMP/github-meta.json" "$hosts"
           export GIT_SSH_COMMAND="ssh -i '$key' -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile='$hosts'"
           git init -q "$RUNNER_TEMP/native-source"
@@ -75,6 +75,7 @@ jobs:
           cd "$RUNNER_TEMP/native-source"
           # The complete build/test script stays in the private source checkout.
           if ! python3 tools/build_native_download.py > "$RUNNER_TEMP/native-build.log" 2>&1; then
+            python3 -c 'import json,pathlib,re,sys; t=pathlib.Path(sys.argv[1]).read_text(errors="replace"); print(json.dumps({"phase":"native-build-tests-package","status":"FAIL","httpStatus":re.findall(r"HTTP Error ([0-9]{3})",t)[-3:],"exceptionClasses":re.findall(r"^([A-Za-z.]*Error):",t,re.M)[-4:],"locations":[b+":"+n for b,n in re.findall(r"File \"[^\"]*/([^/\"]+)\", line ([0-9]+)",t)[-6:]],"compilerLocations":re.findall(r"([A-Za-z0-9_.-]+\.(?:cpp|hpp|inc|mm)):[0-9]+:[0-9]+: (?:fatal )?error:",t)[-5:]}))' "$RUNNER_TEMP/native-build.log"
             echo 'FAIL: native Linux build/tests/package; private logs not uploaded'; exit 1
           fi
           echo 'PASS: native Linux build, GPU, layer and package checks'

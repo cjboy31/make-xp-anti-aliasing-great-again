@@ -46,4 +46,4 @@ Matched screenshots from the initial preview show the edge-smoothing effect. Sti
 
 [Join Discord](https://discord.gg/yh396QNgHZ) · [All downloads](https://github.com/cjboy31/make-xp-anti-aliasing-great-again/releases) · [Changelog](CHANGELOG.md) · [Licensing](LICENSING.md)
 
-Choose the Windows ZIP or Linux tar.gz under Assets. GitHub's automatic “Source code” archives contain this download page, not the plugin's development source. Previously released packages keep their existing licenses. The Windows ZIPs have been repacked without development source; their renderer, plugin and compiled shaders are unchanged.
+Use Aerolux Setup for current Windows installations. Older standalone ZIPs and Linux archives remain under Assets. GitHub's automatic “Source code” archives contain this download page, not the plugin's development source. Previously released packages keep their existing licenses. The Windows ZIPs have been repacked without development source; their renderer, plugin and compiled shaders are unchanged.
